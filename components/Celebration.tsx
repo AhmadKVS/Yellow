@@ -231,7 +231,8 @@ export default function Celebration({
         </p>
         <h1 className="y-cel-h1">You&rsquo;re connected!</h1>
         <p className="y-cel-sub">
-          This is the first step to a meaningful working relationship.
+          This is the first step to a meaningful working relationship. The chat is
+          open.
         </p>
 
         <div className="y-cel-actions">
