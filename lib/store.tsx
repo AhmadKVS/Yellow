@@ -148,6 +148,34 @@ function withConnection(state: AppState, connection: Connection): AppState {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* seen-map — view state, deliberately outside the persisted store            */
+/* -------------------------------------------------------------------------- */
+
+type SeenMap = Record<string, number>;
+type SeenAction =
+  | { type: 'HYDRATE'; seen: SeenMap }
+  | { type: 'MARK'; personId: string; count: number }
+  | { type: 'CLEAR' };
+
+/** Stable identity, so the persist effect can tell "never loaded" from "empty". */
+const EMPTY_SEEN: SeenMap = {};
+
+function seenReducer(state: SeenMap, action: SeenAction): SeenMap {
+  switch (action.type) {
+    case 'HYDRATE':
+      return action.seen;
+    case 'MARK':
+      return state[action.personId] === action.count
+        ? state
+        : { ...state, [action.personId]: action.count };
+    case 'CLEAR':
+      return Object.keys(state).length === 0 ? state : {};
+    default:
+      return state;
+  }
+}
+
 function sameConnection(one: Connection, two: Connection): boolean {
   return (
     one.stage === two.stage &&
@@ -688,34 +716,38 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
   const [pairsLoaded, setPairsLoaded] = useState(false);
   const [myIntro, setMyIntroState] = useState<VoiceIntro | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
-  /** Bumped whenever the seen-map changes, purely to re-render unread counts. */
-  const [seenRevision, setSeenRevision] = useState(0);
 
   const pairsSigRef = useRef('');
   const previousPairsRef = useRef<Map<string, PairSummary> | null>(null);
   const suppressedRef = useRef<Set<string>>(new Set());
-  const seenRef = useRef<Record<string, number>>({});
+
+  /**
+   * How many messages this person had seen per thread. A reducer rather than
+   * `useState`, because it hydrates from localStorage inside an effect and a
+   * bare `setState` there triggers a cascading render — `dispatch` doesn't.
+   */
+  const [seen, seenDispatch] = useReducer(seenReducer, EMPTY_SEEN);
 
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(SEEN_STORAGE_KEY);
       const parsed: unknown = raw ? JSON.parse(raw) : null;
       if (parsed && typeof parsed === 'object') {
-        seenRef.current = parsed as Record<string, number>;
-        setSeenRevision((n) => n + 1);
+        seenDispatch({ type: 'HYDRATE', seen: parsed as Record<string, number> });
       }
     } catch {
       /* an unreadable seen-map just means everything reads as unread */
     }
   }, []);
 
-  const writeSeen = useCallback(() => {
+  useEffect(() => {
+    if (seen === EMPTY_SEEN) return;
     try {
-      window.localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(seenRef.current));
+      window.localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(seen));
     } catch {
       /* quota or private mode — unread counts simply don't survive a reload */
     }
-  }, []);
+  }, [seen]);
 
   /**
    * Diffs one poll against the last and decides whether to interrupt the user.
@@ -910,34 +942,26 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
     (personId: string): number => {
       const summary = pairs.find((p) => p.personId === personId);
       if (!summary) return 0;
-      return Math.max(0, summary.messageCount - (seenRef.current[personId] ?? 0));
+      return Math.max(0, summary.messageCount - (seen[personId] ?? 0));
     },
-    // seenRevision is the whole point: the ref mutates in place, so without it
-    // a "mark as read" would never repaint the badge.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pairs, seenRevision],
+    [pairs, seen],
   );
 
   const unreadTotal = useMemo(
     () =>
       pairs.reduce(
-        (total, p) => total + Math.max(0, p.messageCount - (seenRef.current[p.personId] ?? 0)),
+        (total, p) => total + Math.max(0, p.messageCount - (seen[p.personId] ?? 0)),
         0,
       ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pairs, seenRevision],
+    [pairs, seen],
   );
 
   const markThreadSeen = useCallback(
     (personId: string) => {
       const summary = pairs.find((p) => p.personId === personId);
-      const count = summary?.messageCount ?? 0;
-      if (seenRef.current[personId] === count) return;
-      seenRef.current = { ...seenRef.current, [personId]: count };
-      writeSeen();
-      setSeenRevision((n) => n + 1);
+      seenDispatch({ type: 'MARK', personId, count: summary?.messageCount ?? 0 });
     },
-    [pairs, writeSeen],
+    [pairs],
   );
 
   const dismissNotice = useCallback(() => setNotice(null), []);
@@ -956,13 +980,11 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
     // Unread is view state, so it resets with the view. Pair rows are not
     // touched: a connection is mutual, and one side clearing their browser
     // must not silently disconnect the other person.
-    seenRef.current = {};
-    writeSeen();
-    setSeenRevision((n) => n + 1);
+    seenDispatch({ type: 'CLEAR' });
     // Stamp "now" so this empty state beats any stale DynamoDB row on reload.
     pushCloud(toBlob(EMPTY_APP_STATE, Date.now()));
     dispatch({ type: 'RESET' });
-  }, [pushCloud, writeSeen]);
+  }, [pushCloud]);
 
   /**
    * Last line of defence against seeing yourself in your own orbit. The route

@@ -14,7 +14,9 @@
       ],
       "Resource": [
         "arn:aws:dynamodb:us-east-2:563923432327:table/yellow-app",
-        "arn:aws:dynamodb:us-east-2:563923432327:table/yellow-users"
+        "arn:aws:dynamodb:us-east-2:563923432327:table/yellow-users",
+        "arn:aws:dynamodb:us-east-2:563923432327:table/yellow-hubs",
+        "arn:aws:dynamodb:us-east-2:563923432327:table/yellow-hub-items"
       ]
     },
     {

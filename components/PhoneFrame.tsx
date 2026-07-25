@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { TabBar } from './TabBar';
+import Toast from './Toast';
 
 interface SessionUser {
   name?: string;
@@ -176,6 +177,10 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
           )}
         </main>
       </div>
+
+      {/* Outside the shell on purpose: `main` and the reading column both clip
+          their overflow, and a notification that scrolls away isn't one. */}
+      {!chromeless && <Toast />}
     </>
   );
 }
