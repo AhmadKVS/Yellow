@@ -56,6 +56,21 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+/**
+ * Where to land after signing in. The proxy appends `?next=` when it bounces
+ * someone off a protected route, so honour it — but only same-origin absolute
+ * paths, so a crafted `?next=//elsewhere.com` can't become an open redirect.
+ */
+function destination(): string {
+  try {
+    const next = new URLSearchParams(window.location.search).get('next');
+    if (next && next.startsWith('/') && !next.startsWith('//')) return next;
+  } catch {
+    /* No search params to read — fall through to the root route. */
+  }
+  return '/';
+}
+
 /* ------------------------------------------------------------------ */
 /* Scoped stylesheet — shared verbatim with app/signup/page.tsx so that  */
 /* React's dedupe-by-href can only ever pick identical rules.           */
@@ -406,7 +421,7 @@ export default function LoginPage() {
         }
 
         setRedirecting(true);
-        router.push('/');
+        router.push(destination());
       } catch {
         if (alive.current) {
           setError("Couldn't reach the sign-in service. Try again in a moment.");
@@ -452,7 +467,7 @@ export default function LoginPage() {
 
         if (signedIn.res.ok && signedIn.data.ok === true) {
           setRedirecting(true);
-          router.push('/');
+          router.push(destination());
           return;
         }
 
