@@ -218,14 +218,23 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
   round-trip hasn't re-run against the live server. The pair logic itself is
   untouched and was verified pre-restyle; first real connect on the deployed
   build doubles as the confirmation.
+- **The redesign shipped**: committed and pushed (`f23b437`), test data purged
+  to 9 real directory rows, integration gates green.
+
+### Hours 18+ · NDA Signer preview
+- **An inert "NDA Signer — Coming soon" stub**, in the unlocked chat header (next
+  to the profile link) and as its own row in the sidebar, below Settings. No
+  route, no page, no handler — a plain disabled/non-interactive element by
+  design, previewing where a real feature lands later.
+- The sidebar version got a readability pass: the "Coming soon" tag started as a
+  9.5px uppercase badge crammed onto the label's line and was too small/dim to
+  read. It's now its own 12px line in a clearer gold, with the row height grown
+  to fit two lines. The chat header's pill was left exactly as shipped per
+  explicit instruction not to touch it further.
 
 ## Next up 🎯
 
 ### P0 — Before demoing
-- [ ] **The entire Apple redesign (hours 16–18) is uncommitted.** ~33 files in the
-      working tree; the deployed URL still shows the pre-restyle look. Integration
-      gate: `tsc` clean + build passes + a click-through of every screen, then one
-      commit + push (Amplify auto-deploys). Rollback if needed: tag `pre-restyle`.
 - [ ] **Drag a card on the hub board with a real account.** The board compiles and
       builds but nobody has dragged a card in a browser yet (mock-account testing
       was stopped by request). Drag between two columns, tap a status ring, confirm
@@ -279,6 +288,11 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
       at you should surface the same way a new message does.
 - [ ] Match nudges are computed client-side on load. Real notifications need a
       server-side job.
+- [ ] **NDA Signer is a UI stub only** ("Coming soon" in chat + sidebar, no
+      backend). The real feature: draft an NDA, send it into a chat thread, the
+      other side signs before either can reference the idea further — a
+      document type in the pair-message model, a signature capture step, and a
+      chat gate similar to the voice-intro gate.
 - [ ] **Voice intros are one recording reused for everyone.** Discussed but not yet
       built: keep the account-level `voiceIntro` as a default (edited from Settings,
       pre-fills a brand-new connect screen), but snapshot whatever gets sent onto the
