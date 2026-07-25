@@ -2,8 +2,13 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { use, useEffect, useMemo, useRef, useState } from 'react';
+import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Bubble from '@/components/Bubble';
+import ChatComposer from '@/components/ChatComposer';
+import { putAudioBlob } from '@/lib/audioStore';
+import { resolvePlaybackUrl, uploadClip } from '@/lib/audioClient';
+import { fetchPair, sendPairMessage, type PairMessage, type PairView } from '@/lib/pair';
+import { resolveIdentity } from '@/lib/people';
 import { useAppState } from '@/lib/store';
 import type { Message } from '@/lib/types';
 
@@ -15,18 +20,12 @@ const SANS =
 const MONO =
   'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace';
 
-/** How long the other person "thinks" before their canned line lands. */
-const REPLY_DELAY_MS = 1200;
-
-/** Used once a persona's authored replies are exhausted. Cycled, never random. */
-const GENERIC_REPLIES = [
-  "ha — okay, say more. I'm actually curious.",
-  "noted. let me sit with that and come back to you properly.",
-  'this is the good kind of conversation. keep going.',
-];
+/** How often an open thread re-reads the shared pair record. */
+const PAIR_POLL_MS = 4000;
 
 /* ------------------------------------------------------------------ */
-/* Ids — a module counter guarantees uniqueness even inside one tick    */
+/* Ids — a module counter guarantees uniqueness even inside one tick.   */
+/* These become S3 key segments, so the shape is deliberately narrow.   */
 /* ------------------------------------------------------------------ */
 let idSeq = 0;
 function nextId(): string {
@@ -34,14 +33,6 @@ function nextId(): string {
   return `m_${Date.now().toString(36)}_${idSeq.toString(36)}_${Math.random()
     .toString(36)
     .slice(2, 7)}`;
-}
-
-function textMessage(
-  personId: string,
-  from: Message['from'],
-  text: string
-): Message {
-  return { id: nextId(), personId, from, kind: 'text', text, at: Date.now() };
 }
 
 /* ------------------------------------------------------------------ */
@@ -141,41 +132,24 @@ function ChatStyles() {
   border:1px solid rgba(255,214,10,.11);
 }
 
-/* Typing indicator */
-@keyframes y-ch-dot{
-  0%,60%,100%{ transform:translateY(0); opacity:.4 }
-  30%{ transform:translateY(-4px); opacity:1 }
-}
-.y-ch-dot{
-  width:5px; height:5px; border-radius:9999px; background:#FFD60A;
-  animation:y-ch-dot 1.25s ease-in-out infinite;
+/* A message the server never took. It stays on screen; it just stops
+   pretending it landed. */
+.y-ch-unsent{ opacity:.5 }
+.y-ch-unsent-note{
+  font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:rgba(255,159,28,.72);
 }
 
-/* Composer */
-.y-ch-input{
-  flex:1; min-width:0; height:44px; padding:0 15px;
-  border-radius:9999px; border:1px solid rgba(255,214,10,.15);
-  background:rgba(255,248,231,.045); color:#FFF8E7;
-  font-size:14.5px; letter-spacing:-.008em; outline:none;
-  transition:border-color 220ms linear, background 220ms linear;
-}
-.y-ch-input::placeholder{ color:rgba(255,248,231,.3) }
-.y-ch-input:focus{ border-color:rgba(255,214,10,.5); background:rgba(255,248,231,.07) }
-
-.y-ch-send{
+/* Voice playback */
+.y-ch-play{
   display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
-  width:44px; height:44px; border-radius:9999px; border:0; cursor:pointer;
-  color:#1A1200; background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
-  box-shadow:0 8px 22px -10px rgba(255,195,0,.75), inset 0 1px 0 rgba(255,255,255,.6);
-  transition:transform 240ms cubic-bezier(.22,1,.36,1), opacity 200ms linear, filter 200ms linear;
+  width:24px; height:24px; border-radius:9999px; border:0; padding:0; cursor:pointer;
+  transition:transform 200ms cubic-bezier(.22,1,.36,1), filter 160ms linear;
 }
-.y-ch-send:hover:not(:disabled){ filter:brightness(1.06); transform:translateY(-1px) }
-.y-ch-send:active:not(:disabled){ transform:scale(.94); transition-duration:110ms }
-.y-ch-send:focus-visible{ outline:2px solid #FFF8E7; outline-offset:3px }
-.y-ch-send:disabled{
-  cursor:default; opacity:.32; background:rgba(255,248,231,.1);
-  color:rgba(255,248,231,.5); box-shadow:none;
-}
+.y-ch-play:hover:not(:disabled){ transform:scale(1.08); filter:brightness(1.08) }
+.y-ch-play:active:not(:disabled){ transform:scale(.94) }
+.y-ch-play:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
+.y-ch-play:disabled{ cursor:default; opacity:.55 }
 
 /* Primary CTA — shared with the locked state */
 .y-ch-cta{
@@ -204,8 +178,7 @@ function ChatStyles() {
 
 @media (prefers-reduced-motion: reduce){
   .y-ch-bub{ animation-duration:1ms }
-  .y-ch-dot{ animation:none; opacity:.75 }
-  .y-ch-cta, .y-ch-send{ transition-duration:1ms }
+  .y-ch-cta, .y-ch-play{ transition-duration:1ms }
 }
 `}</style>
   );
@@ -302,31 +275,108 @@ function VoiceBody({ message, mine }: { message: Message; mine: boolean }) {
     [message.waveSeed, message.id, barCount]
   );
 
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlRef = useRef<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [resolving, setResolving] = useState(false);
+  const [dead, setDead] = useState(false);
+
+  /* The URL is resolved on the first press, never on render: a thread of
+     thirty notes must not open with thirty presign requests. */
+  const toggle = useCallback(async () => {
+    const el = audioRef.current;
+    if (!el || dead || resolving) return;
+
+    if (playing) {
+      el.pause();
+      return;
+    }
+
+    if (!urlRef.current) {
+      setResolving(true);
+      const url = await resolvePlaybackUrl(message.id, message.s3Key);
+      setResolving(false);
+      if (!url) {
+        setDead(true);
+        return;
+      }
+      urlRef.current = url;
+      el.src = url;
+    }
+
+    if (el.ended) el.currentTime = 0;
+    try {
+      await el.play();
+    } catch {
+      setDead(true);
+    }
+  }, [dead, message.id, message.s3Key, playing, resolving]);
+
   const ink = mine ? 'rgba(26,18,0,' : 'rgba(255,214,10,';
+  const dim = mine ? 0.42 : 0.6;
+  const lit = mine ? 0.82 : 1;
 
   return (
     <span style={{ display: 'block' }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-        <span
-          aria-hidden
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 24,
-            height: 24,
-            borderRadius: 9999,
-            flexShrink: 0,
-            background: `${ink}.15)`,
+        <audio
+          ref={audioRef}
+          preload="none"
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => {
+            setPlaying(false);
+            setProgress(1);
           }}
+          onTimeUpdate={(event) => {
+            const el = event.currentTarget;
+            const length =
+              Number.isFinite(el.duration) && el.duration > 0
+                ? el.duration
+                : Math.max(1, duration);
+            setProgress(Math.min(1, el.currentTime / length));
+          }}
+          onError={() => {
+            setDead(true);
+            setPlaying(false);
+          }}
+        />
+
+        <button
+          type="button"
+          className="y-ch-play"
+          onClick={() => void toggle()}
+          disabled={dead}
+          style={{ background: `${ink}.15)`, color: mine ? '#1A1200' : '#FFD60A' }}
+          aria-label={
+            dead
+              ? 'Playback unavailable'
+              : playing
+                ? 'Pause this voice note'
+                : 'Play this voice note'
+          }
         >
-          <svg width="9" height="10" viewBox="0 0 9 10" aria-hidden>
-            <path
-              d="M1 1.2v7.6L8 5z"
-              fill={mine ? '#1A1200' : '#FFD60A'}
-            />
-          </svg>
-        </span>
+          {dead ? (
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+              <path
+                d="M1.2 1.2 8.8 8.8M8.8 1.2 1.2 8.8"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+          ) : playing ? (
+            <svg width="9" height="10" viewBox="0 0 9 10" aria-hidden>
+              <rect x="0.6" y="0.6" width="2.8" height="8.8" rx="1" fill="currentColor" />
+              <rect x="5.6" y="0.6" width="2.8" height="8.8" rx="1" fill="currentColor" />
+            </svg>
+          ) : (
+            <svg width="9" height="10" viewBox="0 0 9 10" aria-hidden>
+              <path d="M1 1.2v7.6L8 5z" fill="currentColor" />
+            </svg>
+          )}
+        </button>
 
         <span
           style={{
@@ -347,7 +397,7 @@ function VoiceBody({ message, mine }: { message: Message; mine: boolean }) {
                 maxWidth: 3,
                 height: `${Math.round(h * 100)}%`,
                 borderRadius: 2,
-                background: `${ink}${mine ? 0.42 : 0.6})`,
+                background: `${ink}${(i + 1) / barCount <= progress ? lit : dim})`,
               }}
             />
           ))}
@@ -433,53 +483,151 @@ export default function ChatPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
-  const { state, people, peopleSource, addMessage } = useAppState();
+  const { state, people, peopleSource, refreshPairs, markThreadSeen } = useAppState();
 
-  const [draft, setDraft] = useState('');
-  const [pendingReply, setPendingReply] = useState(false);
+  const [pair, setPair] = useState<PairView | null>(null);
+  const [pairLoaded, setPairLoaded] = useState(false);
+  /* Messages this screen has sent that the server hasn't echoed back yet. */
+  const [pending, setPending] = useState<Message[]>([]);
+  const [failed, setFailed] = useState<string[]>([]);
 
   const endRef = useRef<HTMLDivElement | null>(null);
-  const replyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pairSigRef = useRef('');
+  const meRef = useRef('');
 
   const persona = useMemo(
     () => people.find((p) => p.id === id),
     [people, id]
   );
 
-  const connection = state.connections?.[id];
-  const connected = connection?.stage === 'connected';
+  const connected = pair?.connectedAt != null;
 
-  /* Thread: this person only, oldest first. */
-  const thread = useMemo(() => {
-    const all = state.messages ?? [];
-    return all.filter((m) => m.personId === id).sort((a, b) => a.at - b.at);
-  }, [state.messages, id]);
-
-  /* Latest thread + persona, readable from inside the reply timeout. */
-  const threadRef = useRef(thread);
-  const personaRef = useRef(persona);
-  const addMessageRef = useRef(addMessage);
+  /* The shared record is the only place this thread is true. Poll it while
+     the tab is visible, and on the two events that mean "the user is back". */
   useEffect(() => {
-    threadRef.current = thread;
-    personaRef.current = persona;
-    addMessageRef.current = addMessage;
-  });
+    let active = true;
 
-  /* A fast navigation must never fire a stray reply. */
-  useEffect(() => {
-    return () => {
-      if (replyTimer.current) {
-        clearTimeout(replyTimer.current);
-        replyTimer.current = null;
+    const load = async () => {
+      const me = await resolveIdentity();
+      if (!active) return;
+      meRef.current = me;
+
+      const next = await fetchPair(id, me || undefined);
+      if (!active) return;
+
+      const signature = JSON.stringify(next);
+      if (signature !== pairSigRef.current) {
+        pairSigRef.current = signature;
+        setPair(next);
       }
+      setPairLoaded(true);
     };
-  }, []);
+
+    void load();
+
+    const tick = () => {
+      if (document.visibilityState === 'hidden') return;
+      void load();
+    };
+    const poll = setInterval(tick, PAIR_POLL_MS);
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', tick);
+
+    return () => {
+      active = false;
+      clearInterval(poll);
+      window.removeEventListener('focus', tick);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [id]);
+
+  const thread = useMemo(() => {
+    const server = pair?.messages ?? [];
+    const landed = new Set(server.map((m) => m.id));
+    return [...server, ...pending.filter((m) => !landed.has(m.id))].sort(
+      (a, b) => a.at - b.at
+    );
+  }, [pair, pending]);
+
+  const serverCount = pair?.messages.length ?? 0;
+
+  /* Reading the thread is what clears its badge. */
+  useEffect(() => {
+    if (document.visibilityState === 'hidden') return;
+    markThreadSeen(id);
+  }, [id, serverCount, markThreadSeen]);
 
   /* Newest message always in view. Scrolls whichever ancestor actually
      scrolls, so it survives changes to the surrounding frame. */
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
-  }, [thread.length, pendingReply, connected]);
+  }, [thread.length, connected]);
+
+  /* One send path for both kinds. A refusal keeps the bubble and marks it —
+     an error screen would lose what the person actually wrote. */
+  const post = useCallback(
+    async (payload: Omit<PairMessage, 'senderId' | 'at'>) => {
+      const me = meRef.current || (await resolveIdentity());
+      const result = await sendPairMessage(id, payload, me || undefined);
+
+      if (result.ok && result.pair) {
+        pairSigRef.current = JSON.stringify(result.pair);
+        setPair(result.pair);
+        setPending((list) => list.filter((m) => m.id !== payload.id));
+        return;
+      }
+
+      setFailed((list) => (list.includes(payload.id) ? list : [...list, payload.id]));
+      if (result.reason === 'locked') void refreshPairs();
+    },
+    [id, refreshPairs]
+  );
+
+  const handleText = useCallback(
+    (text: string) => {
+      const messageId = nextId();
+      setPending((list) => [
+        ...list,
+        { id: messageId, personId: id, from: 'me', kind: 'text', text, at: Date.now() },
+      ]);
+      void post({ id: messageId, kind: 'text', text });
+    },
+    [id, post]
+  );
+
+  const handleVoice = useCallback(
+    (clip: { blob: Blob; durationSec: number; waveSeed: number }) => {
+      const messageId = nextId();
+      putAudioBlob(messageId, clip.blob);
+      setPending((list) => [
+        ...list,
+        {
+          id: messageId,
+          personId: id,
+          from: 'me',
+          kind: 'voice',
+          durationSec: clip.durationSec,
+          waveSeed: clip.waveSeed,
+          at: Date.now(),
+        },
+      ]);
+
+      void (async () => {
+        const me = meRef.current || (await resolveIdentity());
+        // A clip that fails to upload still posts: the bubble renders from
+        // durationSec and waveSeed, and only playback is lost.
+        const s3Key = (await uploadClip(me, messageId, clip.blob)) ?? undefined;
+        await post({
+          id: messageId,
+          kind: 'voice',
+          durationSec: clip.durationSec,
+          waveSeed: clip.waveSeed,
+          s3Key,
+        });
+      })();
+    },
+    [id, post]
+  );
 
   /* Rows carry their own grouping/divider flags so the JSX stays flat. */
   const rows = useMemo(() => {
@@ -503,9 +651,10 @@ export default function ChatPage({
   /* ---------------------------------------------------------------- */
   /* Loading — held until the store rehydrates, so the thread never     */
   /* flashes empty on first paint. Also held while the people directory */
-  /* is still in flight, so an unresolved id never flashes "not found". */
+  /* is still in flight, so an unresolved id never flashes "not found", */
+  /* and until the pair answers, so an open thread never flashes locked. */
   /* ---------------------------------------------------------------- */
-  if (!state.hydrated || (!persona && peopleSource === 'loading')) {
+  if (!state.hydrated || !pairLoaded || (!persona && peopleSource === 'loading')) {
     return (
       <CenteredShell>
         <span
@@ -581,8 +730,8 @@ export default function ChatPage({
   /* is: the seam reads the actual intro flags.                         */
   /* ---------------------------------------------------------------- */
   if (!connected) {
-    const theirs = connection?.theirIntroSent ?? false;
-    const mineSent = connection?.myIntroSent ?? false;
+    const theirs = pair?.theirIntroSent ?? false;
+    const mineSent = pair?.myIntroSent ?? false;
     const firstName = persona.name.split(' ')[0];
 
     const copy = mineSent
@@ -718,36 +867,6 @@ export default function ChatPage({
   /* ---------------------------------------------------------------- */
   /* Unlocked thread                                                    */
   /* ---------------------------------------------------------------- */
-  const send = (e: React.FormEvent) => {
-    e.preventDefault();
-    const text = draft.trim();
-    if (!text) return;
-
-    addMessage(textMessage(id, 'me', text));
-    setDraft('');
-
-    /* One reply in flight at a time — a burst of sends collapses into one. */
-    if (replyTimer.current) clearTimeout(replyTimer.current);
-    setPendingReply(true);
-    replyTimer.current = setTimeout(() => {
-      replyTimer.current = null;
-      /* Index by how many of their text messages already landed, so each
-         canned line is used exactly once and in order. */
-      const used = threadRef.current.filter(
-        (m) => m.from === 'them' && m.kind === 'text'
-      ).length;
-      const canned = personaRef.current?.cannedReplies ?? [];
-      const reply =
-        used < canned.length
-          ? canned[used]
-          : GENERIC_REPLIES[(used - canned.length) % GENERIC_REPLIES.length];
-      addMessageRef.current(textMessage(id, 'them', reply));
-      setPendingReply(false);
-    }, REPLY_DELAY_MS);
-  };
-
-  const canSend = draft.trim().length > 0;
-
   return (
     <div className="flex w-full flex-col" style={{ minHeight: FILL_VIEWPORT }}>
       <ChatStyles />
@@ -937,6 +1056,7 @@ export default function ChatPage({
         ) : (
           rows.map(({ m, newDay, startsGroup, endsGroup }) => {
             const mine = m.from === 'me';
+            const unsent = failed.includes(m.id);
             return (
               <div key={m.id} style={{ display: 'contents' }}>
                 {newDay ? (
@@ -951,7 +1071,9 @@ export default function ChatPage({
                 ) : null}
 
                 <div
-                  className={`y-ch-bub ${mine ? 'y-ch-me' : 'y-ch-them'}`}
+                  className={`y-ch-bub ${mine ? 'y-ch-me' : 'y-ch-them'}${
+                    unsent ? ' y-ch-unsent' : ''
+                  }`}
                   style={{
                     fontFamily: SANS,
                     marginTop: startsGroup ? 0 : 3,
@@ -969,7 +1091,18 @@ export default function ChatPage({
                   )}
                 </div>
 
-                {endsGroup ? (
+                {unsent ? (
+                  <span
+                    className="y-ch-unsent-note"
+                    style={{
+                      alignSelf: mine ? 'flex-end' : 'flex-start',
+                      margin: '5px 3px 12px',
+                      fontFamily: MONO,
+                    }}
+                  >
+                    Not sent
+                  </span>
+                ) : endsGroup ? (
                   <span
                     style={{
                       alignSelf: mine ? 'flex-end' : 'flex-start',
@@ -988,35 +1121,13 @@ export default function ChatPage({
           })
         )}
 
-        {/* Typing */}
-        {pendingReply ? (
-          <div
-            aria-live="polite"
-            aria-label={`${persona.name} is typing`}
-            className="y-ch-bub y-ch-them"
-            style={{
-              borderRadius: '18px 18px 18px 6px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '12px 15px',
-              marginTop: 3,
-            }}
-          >
-            <span className="y-ch-dot" />
-            <span className="y-ch-dot" style={{ animationDelay: '.16s' }} />
-            <span className="y-ch-dot" style={{ animationDelay: '.32s' }} />
-          </div>
-        ) : null}
-
         {/* Scroll anchor — offset so the sticky composer never covers it. */}
         <div ref={endRef} aria-hidden style={{ scrollMarginBottom: 96 }} />
       </div>
 
       {/* Composer */}
-      <form
-        onSubmit={send}
-        className={`sticky bottom-0 z-20 flex shrink-0 items-center gap-2 pt-3 ${BLEED}`}
+      <div
+        className={`sticky bottom-0 z-20 shrink-0 pt-3 ${BLEED}`}
         style={{
           paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
           borderTop: '1px solid rgba(255,214,10,.1)',
@@ -1026,33 +1137,12 @@ export default function ChatPage({
           WebkitBackdropFilter: 'blur(12px)',
         }}
       >
-        <input
-          className="y-ch-input"
-          style={{ fontFamily: SANS }}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={`Message ${persona.name.split(' ')[0]}`}
-          aria-label={`Message ${persona.name}`}
-          autoComplete="off"
+        <ChatComposer
+          personName={persona.name}
+          onSendText={handleText}
+          onSendVoice={handleVoice}
         />
-        <button
-          type="submit"
-          className="y-ch-send"
-          disabled={!canSend}
-          aria-label="Send message"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
-            <path
-              d="M8 14V2.6M8 2.6L3 7.6M8 2.6l5 5"
-              stroke="currentColor"
-              strokeWidth="1.9"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-          </svg>
-        </button>
-      </form>
+      </div>
     </div>
   );
 }

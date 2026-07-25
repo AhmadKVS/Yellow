@@ -35,7 +35,7 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
 - **Voice intro exchange** — real `MediaRecorder` capture, analyser-driven waveform,
   split-node rail that lights up as each side answers, typed fallback if the mic is
   denied, celebration on unlock.
-- **DM thread** with day dividers, message grouping, canned replies; **project hubs**
+- **DM thread** with day dividers and message grouping; **project hubs**
   (create, add/remove members, connected-only picker).
 - **`/chats`** conversation list (fixed a dead-end where the tab pointed at `/home`).
 
@@ -58,6 +58,23 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
   the compute role was `null`, so every API route had no AWS identity.
 - Verified end-to-end **on the deployed URL**: signup, login, session, `/api/people`
   returning `source: "dynamodb"`.
+
+### Hours 8–10 · Real connections
+- **Shared pair rows** in `yellow-app` under `pair#<a>#<b>` — both intro flags,
+  `connectedAt`, and an append-only message list written with `list_append`. A
+  connection is now the server's fact rather than one browser's optimism, and the
+  celebration only fires when both people have genuinely sent.
+- **Real voice intros.** `toPerson()` no longer fabricates `intro.who` / `.building` /
+  `.lookingFor` from a tagline. An intro is recorded once, stored on the user's
+  `yellow-users` row, and replayed to whoever connects; someone who hasn't recorded
+  gets an honest empty state instead of invented answers.
+- **Voice notes survive a reload and cross accounts** — owner-scoped S3 keys
+  (`audio/<ownerId>/<messageId>.webm`) plus a presigned `GET /api/audio?key=`, cached
+  by message id.
+- **Canned replies deleted.** The thread is polled from the shared row, so nothing in
+  the app talks back to you any more.
+- **In-app notifications** — a toast on connect and on a new message, an unread dot on
+  the Chats tab and sidebar item, and per-thread unread counts in `/chats`.
 
 ---
 
@@ -86,13 +103,16 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
       `/api/people` while signed out and the wall correctly 401s them. Harmless, but
       visible with devtools open. Skip those fetches on public routes.
 - [ ] **Orphaned `me` row** in `yellow-app` from the pre-auth era. Safe to delete.
+- [ ] **`/api/pairs` is a `Scan`** with `begins_with(userId, 'pair#')`, filtered in the
+      handler to rows containing my id. Fine at demo scale and it matches how
+      `/api/people` reads the directory, but it reads every pair row on every 8s poll
+      for every open tab. Needs a GSI (`a` and `b` as keys, or a per-member index)
+      before real volume.
 
 ### P2 — Product gaps
-- [ ] Real users have no `intro`/`cannedReplies`; `toPerson()` synthesises a neutral
-      intro from their tagline. Their side of the exchange should be a real recorded
-      answer, delivered asynchronously.
-- [ ] Voice notes only play back in-session unless re-fetched from S3 — wire playback
-      to the presigned GET so audio survives a refresh.
+- [ ] **Presigned playback URLs are cached in-session and expire after an hour**; a tab
+      left open longer than that serves a dead URL until reload. Cache the expiry
+      alongside the URL and re-presign on miss.
 - [ ] Hubs are list/create/add-member only. No hub chat, no tasks.
 - [ ] Match nudges are computed client-side on load. Real notifications need a
       server-side job.

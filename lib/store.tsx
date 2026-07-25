@@ -30,6 +30,8 @@ import {
   resolveIdentity,
   type PeopleSource,
 } from './people';
+import { fetchPairs, type PairSummary } from './pair';
+import { fetchIntro, type VoiceIntro } from './intro';
 
 /* -------------------------------------------------------------------------- */
 /* constants                                                                  */
@@ -46,6 +48,10 @@ const HYDRATE_DEADLINE_MS = 3_500;
 /** How often the open app re-reads the directory, so someone who signs up on
  *  another device shows up in your orbit without a reload. */
 const PEOPLE_REFRESH_MS = 20_000;
+/** How often we re-read the shared pairs. Drives notifications and unread. */
+const PAIRS_REFRESH_MS = 8_000;
+/** Per-person "how many messages had I seen". View state, never connection state. */
+const SEEN_STORAGE_KEY = 'yellow:seen';
 
 /* -------------------------------------------------------------------------- */
 /* state shape                                                                */
@@ -95,6 +101,7 @@ export type Action =
   | { type: 'SET_STAGE'; personId: string; stage: ConnectionStage }
   | { type: 'SEND_MY_INTRO'; personId: string }
   | { type: 'RECEIVE_THEIR_INTRO'; personId: string }
+  | { type: 'RECONCILE_PAIRS'; pairs: PairSummary[] }
   | { type: 'ADD_MESSAGE'; msg: Message }
   | { type: 'CREATE_HUB'; hub: Hub }
   | { type: 'ADD_HUB_MEMBER'; hubId: string; personId: string }
@@ -138,6 +145,65 @@ function withConnection(state: AppState, connection: Connection): AppState {
   return {
     ...state,
     connections: { ...state.connections, [connection.personId]: connection },
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* seen-map — view state, deliberately outside the persisted store            */
+/* -------------------------------------------------------------------------- */
+
+type SeenMap = Record<string, number>;
+type SeenAction =
+  | { type: 'HYDRATE'; seen: SeenMap }
+  | { type: 'MARK'; personId: string; count: number }
+  | { type: 'CLEAR' };
+
+/** Stable identity, so the persist effect can tell "never loaded" from "empty". */
+const EMPTY_SEEN: SeenMap = {};
+
+function seenReducer(state: SeenMap, action: SeenAction): SeenMap {
+  switch (action.type) {
+    case 'HYDRATE':
+      return action.seen;
+    case 'MARK':
+      return state[action.personId] === action.count
+        ? state
+        : { ...state, [action.personId]: action.count };
+    case 'CLEAR':
+      return Object.keys(state).length === 0 ? state : {};
+    default:
+      return state;
+  }
+}
+
+function sameConnection(one: Connection, two: Connection): boolean {
+  return (
+    one.stage === two.stage &&
+    one.myIntroSent === two.myIntroSent &&
+    one.theirIntroSent === two.theirIntroSent &&
+    (one.connectedAt ?? 0) === (two.connectedAt ?? 0)
+  );
+}
+
+/** What a server-side pair means for the local `Connection` mirror. */
+function connectionFromSummary(
+  summary: PairSummary,
+  current: Connection | undefined,
+): Connection {
+  const stage: ConnectionStage = summary.connectedAt
+    ? 'connected'
+    : summary.myIntroSent || summary.theirIntroSent
+      ? 'intro_pending'
+      : // Nothing has happened on the server yet, so a local `nudged` is still
+        // the most specific thing anyone knows.
+        (current?.stage === 'nudged' ? 'nudged' : 'stranger');
+
+  return {
+    personId: summary.personId,
+    stage,
+    myIntroSent: summary.myIntroSent,
+    theirIntroSent: summary.theirIntroSent,
+    ...(summary.connectedAt ? { connectedAt: summary.connectedAt } : {}),
   };
 }
 
@@ -197,6 +263,60 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'ADD_MESSAGE': {
       if (state.messages.some((m) => m.id === action.msg.id)) return state;
       return { ...state, messages: [...state.messages, action.msg] };
+    }
+
+    /**
+     * Server truth wins for connection stage.
+     *
+     * Two directions. Every pair the server knows about overwrites its local
+     * mirror. And every local connection the server has *never heard of* is
+     * wound back to `stranger`: those are the fake ones, minted when the
+     * connect screen told this browser that the other person had answered.
+     * Their messages go with them — they were never delivered to anyone.
+     *
+     * Only ever called with a list the server actually returned. Reconciling
+     * against a failed fetch would delete every real connection.
+     */
+    case 'RECONCILE_PAIRS': {
+      const known = new Set(action.pairs.map((p) => p.personId));
+      const connections = { ...state.connections };
+      const dropped = new Set<string>();
+      let changed = false;
+
+      for (const summary of action.pairs) {
+        const current = connections[summary.personId];
+        const next = connectionFromSummary(summary, current);
+        if (!current || !sameConnection(current, next)) {
+          connections[summary.personId] = next;
+          changed = true;
+        }
+      }
+
+      for (const [personId, connection] of Object.entries(state.connections)) {
+        if (known.has(personId)) continue;
+        const claimsSomething =
+          connection.stage === 'connected' ||
+          connection.myIntroSent ||
+          connection.theirIntroSent;
+        if (!claimsSomething) continue;
+
+        connections[personId] = {
+          personId,
+          stage: 'stranger',
+          myIntroSent: false,
+          theirIntroSent: false,
+        };
+        dropped.add(personId);
+        changed = true;
+      }
+
+      if (!changed) return state;
+
+      const messages = dropped.size
+        ? state.messages.filter((m) => !dropped.has(m.personId))
+        : state.messages;
+
+      return { ...state, connections, messages };
     }
 
     case 'CREATE_HUB':
@@ -365,8 +485,38 @@ export interface AppStateApi {
   dismissNudge(): void;
   resetAll(): void;
   cloudStatus: CloudStatus;
+
+  /**
+   * The shared connections, read live from the server. Like `people`, these
+   * live outside the persisted store and are never written to localStorage or
+   * the state row — the server is the only place they are true.
+   */
+  pairs: PairSummary[];
+  pairsLoaded: boolean;
+  /** My own recorded intro, reused for everyone who connects with me. */
+  myIntro: VoiceIntro | null;
+  setMyIntro(intro: VoiceIntro | null): void;
+  refreshPairs(): Promise<void>;
+  unreadFor(personId: string): number;
+  unreadTotal: number;
+  markThreadSeen(personId: string): void;
+  /** What just happened that the user should be told about. */
+  notice: Notice | null;
+  dismissNotice(): void;
+  /**
+   * Suppress the next notice for this person. The screen that *caused* an
+   * unlock shows its own celebration; a toast on top of it is noise.
+   */
+  suppressNotice(personId: string): void;
+
   /** Escape hatch. Prefer the named helpers above. */
   dispatch: Dispatch<Action>;
+}
+
+export interface Notice {
+  personId: string;
+  kind: 'connected' | 'message';
+  at: number;
 }
 
 const AppStateContext = createContext<AppStateApi | undefined>(undefined);
@@ -554,6 +704,131 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
   }, [adoptIdentity]);
 
   /* ---------------------------------------------------------------------- */
+  /* shared pairs — live, and deliberately NOT persisted                    */
+  /*                                                                        */
+  /* Same treatment as `people` above, and for the same reason: `toBlob()`   */
+  /* only serialises `store.app`, so nothing here can reach localStorage or  */
+  /* the state row, and none of these setters can bump `revision`. The       */
+  /* server is the only place a connection is true.                         */
+  /* ---------------------------------------------------------------------- */
+
+  const [pairs, setPairs] = useState<PairSummary[]>([]);
+  const [pairsLoaded, setPairsLoaded] = useState(false);
+  const [myIntro, setMyIntroState] = useState<VoiceIntro | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+
+  const pairsSigRef = useRef('');
+  const previousPairsRef = useRef<Map<string, PairSummary> | null>(null);
+  const suppressedRef = useRef<Set<string>>(new Set());
+
+  /**
+   * How many messages this person had seen per thread. A reducer rather than
+   * `useState`, because it hydrates from localStorage inside an effect and a
+   * bare `setState` there triggers a cascading render — `dispatch` doesn't.
+   */
+  const [seen, seenDispatch] = useReducer(seenReducer, EMPTY_SEEN);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SEEN_STORAGE_KEY);
+      const parsed: unknown = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object') {
+        seenDispatch({ type: 'HYDRATE', seen: parsed as Record<string, number> });
+      }
+    } catch {
+      /* an unreadable seen-map just means everything reads as unread */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (seen === EMPTY_SEEN) return;
+    try {
+      window.localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(seen));
+    } catch {
+      /* quota or private mode — unread counts simply don't survive a reload */
+    }
+  }, [seen]);
+
+  /**
+   * Diffs one poll against the last and decides whether to interrupt the user.
+   * Never fires on the first load: every existing connection would announce
+   * itself as news.
+   */
+  const raiseNotices = useCallback((next: PairSummary[]) => {
+    const previous = previousPairsRef.current;
+    const map = new Map(next.map((p) => [p.personId, p]));
+    previousPairsRef.current = map;
+
+    if (!previous) return;
+
+    for (const summary of next) {
+      const before = previous.get(summary.personId);
+
+      if (summary.connectedAt && !before?.connectedAt) {
+        if (suppressedRef.current.delete(summary.personId)) continue;
+        setNotice({ personId: summary.personId, kind: 'connected', at: Date.now() });
+        return;
+      }
+
+      const grew = summary.messageCount > (before?.messageCount ?? 0);
+      if (grew && !summary.lastSenderIsMe) {
+        setNotice({ personId: summary.personId, kind: 'message', at: Date.now() });
+        return;
+      }
+    }
+  }, []);
+
+  const refreshPairs = useCallback(async () => {
+    const me = await resolveIdentity();
+    const result = await fetchPairs(me || resolveDirectoryId());
+
+    // A failed read is not permission to forget every connection this person
+    // has. Only a genuine answer reconciles.
+    if (!result.ok || !mountedRef.current) return;
+
+    const signature = JSON.stringify(result.pairs);
+    if (signature !== pairsSigRef.current) {
+      pairsSigRef.current = signature;
+      setPairs(result.pairs);
+    }
+    raiseNotices(result.pairs);
+    dispatch({ type: 'RECONCILE_PAIRS', pairs: result.pairs });
+    setPairsLoaded(true);
+  }, [raiseNotices]);
+
+  useEffect(() => {
+    void refreshPairs();
+
+    const tick = () => {
+      if (document.visibilityState === 'hidden') return;
+      void refreshPairs();
+    };
+    const poll = setInterval(tick, PAIRS_REFRESH_MS);
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', tick);
+
+    return () => {
+      clearInterval(poll);
+      window.removeEventListener('focus', tick);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [refreshPairs]);
+
+  /* My own intro, so the connect screen can offer it instead of three empty
+     recorders. Best-effort: not having it just means recording again. */
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const me = await resolveIdentity();
+      const intro = await fetchIntro(me || resolveDirectoryId());
+      if (active && intro) setMyIntroState(intro);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /* ---------------------------------------------------------------------- */
   /* persistence — local sync, cloud debounced                              */
   /* ---------------------------------------------------------------------- */
 
@@ -659,6 +934,42 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
     dispatch({ type: 'DISMISS_NUDGE' });
   }, []);
 
+  const setMyIntro = useCallback((intro: VoiceIntro | null) => {
+    setMyIntroState(intro);
+  }, []);
+
+  const unreadFor = useCallback(
+    (personId: string): number => {
+      const summary = pairs.find((p) => p.personId === personId);
+      if (!summary) return 0;
+      return Math.max(0, summary.messageCount - (seen[personId] ?? 0));
+    },
+    [pairs, seen],
+  );
+
+  const unreadTotal = useMemo(
+    () =>
+      pairs.reduce(
+        (total, p) => total + Math.max(0, p.messageCount - (seen[p.personId] ?? 0)),
+        0,
+      ),
+    [pairs, seen],
+  );
+
+  const markThreadSeen = useCallback(
+    (personId: string) => {
+      const summary = pairs.find((p) => p.personId === personId);
+      seenDispatch({ type: 'MARK', personId, count: summary?.messageCount ?? 0 });
+    },
+    [pairs],
+  );
+
+  const dismissNotice = useCallback(() => setNotice(null), []);
+
+  const suppressNotice = useCallback((personId: string) => {
+    suppressedRef.current.add(personId);
+  }, []);
+
   const resetAll = useCallback(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -666,6 +977,10 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
     }
     pendingRef.current = null;
     clearLocal();
+    // Unread is view state, so it resets with the view. Pair rows are not
+    // touched: a connection is mutual, and one side clearing their browser
+    // must not silently disconnect the other person.
+    seenDispatch({ type: 'CLEAR' });
     // Stamp "now" so this empty state beats any stale DynamoDB row on reload.
     pushCloud(toBlob(EMPTY_APP_STATE, Date.now()));
     dispatch({ type: 'RESET' });
@@ -701,6 +1016,17 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       dismissNudge,
       resetAll,
       cloudStatus,
+      pairs,
+      pairsLoaded,
+      myIntro,
+      setMyIntro,
+      refreshPairs,
+      unreadFor,
+      unreadTotal,
+      markThreadSeen,
+      notice,
+      dismissNotice,
+      suppressNotice,
       dispatch,
     }),
     [
@@ -719,6 +1045,17 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       dismissNudge,
       resetAll,
       cloudStatus,
+      pairs,
+      pairsLoaded,
+      myIntro,
+      setMyIntro,
+      refreshPairs,
+      unreadFor,
+      unreadTotal,
+      markThreadSeen,
+      notice,
+      dismissNotice,
+      suppressNotice,
     ],
   );
 

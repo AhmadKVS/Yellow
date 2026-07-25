@@ -5,29 +5,52 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Celebration from '@/components/Celebration';
 import VoiceNoteBubble, { estimateDuration, waveSeedFrom } from '@/components/VoiceNoteBubble';
 import VoiceRecorder, { type VoiceAnswer } from '@/components/VoiceRecorder';
-import { getAudioUrl, setAudioUrl } from '@/lib/audioStore';
+import { resolvePlaybackUrl, uploadClip } from '@/lib/audioClient';
+import { setAudioUrl } from '@/lib/audioStore';
+import {
+  INTRO_KEYS,
+  fetchIntro,
+  saveIntro,
+  type IntroKey,
+  type VoiceClip,
+  type VoiceIntro,
+} from '@/lib/intro';
 import { rankMatches } from '@/lib/match';
+import { fetchPair, sendPairIntro, type PairView } from '@/lib/pair';
+import { resolveIdentity } from '@/lib/people';
 import { useAppState } from '@/lib/store';
-import type { Message, SeedPersona } from '@/lib/types';
+import type { SeedPersona } from '@/lib/types';
 
 const SANS =
   'var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 const MONO =
   'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace';
 
-const QUESTIONS = [
+const QUESTIONS: { key: IntroKey; label: string }[] = [
   { key: 'who', label: 'Who are you?' },
   { key: 'building', label: 'What are you building?' },
   { key: 'lookingFor', label: 'What are you looking for?' },
-] as const;
+];
 
-type QuestionKey = (typeof QUESTIONS)[number]['key'];
-
-/** Their answers land one at a time, as if they were being sent right now. */
-const ARRIVAL_MS = [900, 1600, 2300];
+/** How often we re-read the shared pair while this screen is open. */
+const PAIR_POLL_MS = 4000;
 
 /** Upload is best-effort; the flow never waits longer than this for S3. */
 const UPLOAD_BUDGET_MS = 2500;
+
+/**
+ * The id the server gives an intro clip when it seeds the thread. Deriving it
+ * the same way on both sides is what lets one presigned URL serve the connect
+ * screen and the chat, and what makes a clip survive a refresh.
+ */
+function clipMessageId(ownerId: string, key: IntroKey): string {
+  return `intro-${ownerId}-${key}`;
+}
+
+/** A clip with words but no audio was typed; anything else is a recording. */
+function clipKind(clip: VoiceClip): 'text' | 'voice' {
+  return clip.text && !clip.s3Key ? 'text' : 'voice';
+}
 
 /* ------------------------------------------------------------------ *
  * Styles
@@ -69,6 +92,10 @@ function ConnectStyles() {
 .y-cn-strip-eyebrow{
   display:flex; align-items:center; gap:8px;
   font-size:9.5px; letter-spacing:.19em; text-transform:uppercase; color:#FFD60A;
+}
+.y-cn-strip-title{
+  margin:8px 0 0; font-size:17px; font-weight:650; letter-spacing:-.024em; line-height:1.24;
+  color:#FFF8E7;
 }
 .y-cn-strip-sub{
   margin:6px 0 0; font-size:12.5px; line-height:1.45; letter-spacing:-.004em;
@@ -124,6 +151,16 @@ function ConnectStyles() {
 }
 @keyframes y-cn-dot{ 0%,100%{ opacity:.2; transform:translateY(0) } 45%{ opacity:1; transform:translateY(-3px) } }
 
+.y-cn-empty{
+  margin:0 0 22px; padding:13px 15px; max-width:470px;
+  border-radius:14px; border:1px solid rgba(255,248,231,.08);
+  background:rgba(255,248,231,.028);
+}
+.y-cn-empty-line{
+  margin:7px 0 0; font-size:12.5px; line-height:1.5; letter-spacing:-.004em;
+  color:rgba(255,248,231,.5);
+}
+
 /* Sticks to the bottom of whatever column the app frame gives us, and bleeds
    its background out past the frame's gutter so the CTA always sits on solid
    ground while the thread scrolls behind it. */
@@ -154,11 +191,25 @@ function ConnectStyles() {
   cursor:not-allowed; color:rgba(255,248,231,.34); background:rgba(255,248,231,.05);
   box-shadow:inset 0 0 0 1px rgba(255,248,231,.08);
 }
+/* Not a button: there is nothing left to press until they answer. */
+.y-cn-cta-status{
+  cursor:default; font-weight:640; color:rgba(255,248,231,.42);
+  background:rgba(255,248,231,.05); box-shadow:inset 0 0 0 1px rgba(255,248,231,.08);
+}
 .y-cn-count{
   margin:12px 0 0; text-align:center;
   font-size:9.5px; letter-spacing:.16em; text-transform:uppercase;
   color:rgba(255,248,231,.3);
 }
+.y-cn-quiet{
+  display:block; width:max-content; margin:12px auto 0; padding:2px 0;
+  border:0; background:none; cursor:pointer; text-decoration:none;
+  font-size:9.5px; letter-spacing:.16em; text-transform:uppercase;
+  color:rgba(255,248,231,.42); transition:color 180ms linear;
+}
+.y-cn-quiet:hover{ color:#FFD60A }
+.y-cn-quiet:focus-visible{ outline:2px solid #FFD60A; outline-offset:3px; border-radius:4px }
+.y-cn-quiet:disabled{ opacity:.4; cursor:not-allowed }
 @media (prefers-reduced-motion: reduce){
   .y-cn-enter,.y-cn-foot{ animation-duration:1ms }
   .y-cn-pulse,.y-cn-dot{ animation:none }
@@ -241,47 +292,87 @@ function NotFound({ id }: { id: string }) {
 
 /* ------------------------------------------------------------------ */
 
+/**
+ * Playable URLs for one person's three clips. The in-session object URL wins,
+ * otherwise the key is presigned once and cached under the same message id the
+ * chat thread uses, so a clip is fetched once per session at most.
+ */
+function useClipUrls(
+  intro: VoiceIntro | null,
+  ownerId: string,
+): Partial<Record<IntroKey, string>> {
+  const [urls, setUrls] = useState<Partial<Record<IntroKey, string>>>({});
+
+  useEffect(() => {
+    if (!intro || !ownerId) return;
+    let active = true;
+
+    void (async () => {
+      const found: Partial<Record<IntroKey, string>> = {};
+      await Promise.all(
+        INTRO_KEYS.map(async (key) => {
+          const clip = intro[key];
+          const url =
+            (await resolvePlaybackUrl(clipMessageId(ownerId, key), clip.s3Key)) ?? clip.url;
+          if (url) found[key] = url;
+        }),
+      );
+      if (active) setUrls(found);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [intro, ownerId]);
+
+  return urls;
+}
+
 function Exchange({ person }: { person: SeedPersona }) {
   const {
     state,
     people,
     ensureConnection,
     setStage,
-    sendMyIntro,
-    receiveTheirIntro,
-    addMessage,
+    myIntro,
+    setMyIntro,
+    refreshPairs,
+    suppressNotice,
   } = useAppState();
 
-  const [answers, setAnswers] = useState<Partial<Record<QuestionKey, VoiceAnswer>>>({});
-  const [arrived, setArrived] = useState(0);
+  const [answers, setAnswers] = useState<Partial<Record<IntroKey, VoiceAnswer>>>({});
   const [sending, setSending] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
-  const sentRef = useRef(false);
+  const [rerecording, setRerecording] = useState(false);
 
-  /* Was this connection already done *before* this visit? Comparing
-     `connectedAt` against the moment the page opened keeps the answer stable:
-     an unlock that happens while you're here is newer than the page, so
-     sending never bounces you into the summary state mid-celebration. */
-  const [openedAt] = useState(() => Date.now());
-  const connection = state.connections[person.id];
-  const alreadyConnected =
-    connection?.stage === 'connected' && (connection.connectedAt ?? 0) <= openedAt;
+  const [meId, setMeId] = useState('');
+  const [pair, setPair] = useState<PairView | null>(null);
+  const [theirIntro, setTheirIntro] = useState<VoiceIntro | null>(null);
+  const [theirIntroLoaded, setTheirIntroLoaded] = useState(false);
+
+  const sentRef = useRef(false);
+  const sendingRef = useRef(false);
+  const haveTheirIntroRef = useRef(false);
+  /** True once we've seen "mine is in, theirs isn't" — what makes the flip news. */
+  const waitedRef = useRef(false);
+  const pairSigRef = useRef('');
+
+  /* A poll that answers with what we already have must not re-render the page
+     out from under a recorder that is halfway through a take. */
+  const applyPair = useCallback((view: PairView | null) => {
+    const signature = JSON.stringify(view);
+    if (signature === pairSigRef.current) return;
+    pairSigRef.current = signature;
+    setPair(view);
+  }, []);
 
   const firstName = person.name.split(' ')[0];
 
-  const theirNotes = useMemo(
-    () =>
-      QUESTIONS.map((q) => {
-        const text = person.intro[q.key];
-        return {
-          ...q,
-          text,
-          durationSec: estimateDuration(text),
-          waveSeed: waveSeedFrom(`${person.id}:${q.key}`),
-        };
-      }),
-    [person],
-  );
+  const alreadyConnected = pair?.connectedAt != null;
+  const waiting = Boolean(pair?.myIntroSent) && !alreadyConnected;
+
+  const theirUrls = useClipUrls(theirIntro, person.id);
+  const myUrls = useClipUrls(myIntro, meId);
 
   const overlap = useMemo(() => {
     if (!state.me) return null;
@@ -303,16 +394,65 @@ function Exchange({ person }: { person: SeedPersona }) {
     }
   }, [state.hydrated, state.connections, alreadyConnected, person.id, setStage]);
 
-  /* Their answers, arriving live. */
-  useEffect(() => {
-    if (!state.hydrated || alreadyConnected) return;
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const delays = reduced ? ARRIVAL_MS.map(() => 0) : ARRIVAL_MS;
-    const timers = delays.map((ms, i) => window.setTimeout(() => setArrived(i + 1), ms));
-    return () => timers.forEach(window.clearTimeout);
-  }, [state.hydrated, alreadyConnected]);
+  /* -- server truth ------------------------------------------------- */
 
-  const setAnswer = useCallback((key: QuestionKey, answer: VoiceAnswer | null) => {
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      const me = await resolveIdentity();
+      if (!active) return;
+      setMeId(me);
+
+      const [view, intro] = await Promise.all([
+        fetchPair(person.id, me),
+        haveTheirIntroRef.current ? Promise.resolve(null) : fetchIntro(person.id),
+      ]);
+      if (!active) return;
+
+      if (intro) {
+        haveTheirIntroRef.current = true;
+        setTheirIntro(intro);
+      }
+      setTheirIntroLoaded(true);
+      // A send in flight already knows more than a poll that started before it.
+      if (!sendingRef.current) applyPair(view);
+    };
+
+    void load();
+
+    const tick = () => {
+      if (document.visibilityState === 'hidden') return;
+      void load();
+    };
+    const poll = setInterval(tick, PAIR_POLL_MS);
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', tick);
+
+    return () => {
+      active = false;
+      clearInterval(poll);
+      window.removeEventListener('focus', tick);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [person.id, applyPair]);
+
+  /* The unlock can land while this page is open — from the poll, not from us
+     telling ourselves they answered. Someone who arrives at an already-open
+     connection gets the summary instead; only a wait that flips is news. */
+  useEffect(() => {
+    if (!pair) return;
+    if (pair.myIntroSent && !pair.connectedAt) {
+      waitedRef.current = true;
+      return;
+    }
+    if (pair.connectedAt && waitedRef.current) {
+      waitedRef.current = false;
+      setCelebrating(true);
+    }
+  }, [pair]);
+
+  const setAnswer = useCallback((key: IntroKey, answer: VoiceAnswer | null) => {
     setAnswers((prev) => {
       if (answer === null) {
         if (!prev[key]) return prev;
@@ -324,99 +464,104 @@ function Exchange({ person }: { person: SeedPersona }) {
     });
   }, []);
 
+  const useSaved = Boolean(myIntro) && !rerecording;
   const answeredCount = QUESTIONS.filter((q) => Boolean(answers[q.key])).length;
-  const myTurn = arrived >= QUESTIONS.length;
-  const ready = answeredCount === QUESTIONS.length;
+  const ready = useSaved || answeredCount === QUESTIONS.length;
 
   /* -- send --------------------------------------------------------- */
 
   const handleSend = useCallback(async () => {
     if (!ready || sending || sentRef.current) return;
     sentRef.current = true;
+    sendingRef.current = true;
     setSending(true);
 
-    const now = Date.now();
+    const me = await resolveIdentity();
+    let intro = useSaved ? myIntro : null;
 
-    // Theirs land first in the transcript — that is the story of this screen.
-    const theirMessages: Message[] = theirNotes.map((note, i) => ({
-      id: `${person.id}-intro-${note.key}`,
-      personId: person.id,
-      from: 'them',
-      kind: 'voice',
-      text: note.text,
-      durationSec: note.durationSec,
-      waveSeed: note.waveSeed,
-      at: now - 90_000 + i * 1000,
-    }));
+    if (!intro) {
+      const clips: Partial<Record<IntroKey, VoiceClip>> = {};
+      const uploads: Promise<void>[] = [];
 
-    const myMessages: Message[] = [];
-    const uploads: Promise<void>[] = [];
+      for (const key of INTRO_KEYS) {
+        const answer = answers[key];
+        if (!answer) continue;
 
-    QUESTIONS.forEach((q, i) => {
-      const answer = answers[q.key];
-      if (!answer) return;
-      const messageId = `me-${person.id}-${q.key}-${now}`;
+        if (answer.kind === 'text') {
+          clips[key] = {
+            durationSec: estimateDuration(answer.text),
+            waveSeed: waveSeedFrom(`${me}:${key}`),
+            text: answer.text,
+          };
+          continue;
+        }
 
-      if (answer.kind === 'text') {
-        myMessages.push({
-          id: messageId,
-          personId: person.id,
-          from: 'me',
-          kind: 'text',
-          text: answer.text,
-          at: now + i * 1000,
-        });
+        const clip: VoiceClip = {
+          durationSec: answer.durationSec,
+          waveSeed: answer.waveSeed,
+        };
+        const messageId = clipMessageId(me, key);
+        // Playback comes from this object URL whether or not S3 ever works.
+        setAudioUrl(messageId, answer.url);
+        uploads.push(
+          uploadClip(me, messageId, answer.blob).then((s3Key) => {
+            if (s3Key) clip.s3Key = s3Key;
+          }),
+        );
+        clips[key] = clip;
+      }
+
+      // S3 is a nice-to-have. Give it a moment, then move on regardless.
+      await Promise.race([
+        Promise.allSettled(uploads),
+        new Promise((resolve) => setTimeout(resolve, UPLOAD_BUDGET_MS)),
+      ]);
+
+      const { who, building, lookingFor } = clips;
+      if (!who || !building || !lookingFor) {
+        sentRef.current = false;
+        sendingRef.current = false;
+        setSending(false);
         return;
       }
 
-      const message: Message = {
-        id: messageId,
-        personId: person.id,
-        from: 'me',
-        kind: 'voice',
-        durationSec: answer.durationSec,
-        waveSeed: answer.waveSeed,
-        at: now + i * 1000,
-      };
-      // Playback comes from this object URL whether or not S3 ever works.
-      setAudioUrl(messageId, answer.url);
-      uploads.push(
-        uploadClip(messageId, answer.blob).then((key) => {
-          if (key) message.s3Key = key;
-        }),
-      );
-      myMessages.push(message);
-    });
+      intro = { who, building, lookingFor, recordedAt: Date.now() };
+      await saveIntro(intro, me);
+      setMyIntro(intro);
+      setRerecording(false);
+    }
 
-    // S3 is a nice-to-have. Give it a moment, then move on regardless.
-    await Promise.race([
-      Promise.allSettled(uploads),
-      new Promise((resolve) => setTimeout(resolve, UPLOAD_BUDGET_MS)),
-    ]);
+    // The celebration below is this screen's job; a toast on top of it is noise.
+    suppressNotice(person.id);
 
-    sendMyIntro(person.id);
-    receiveTheirIntro(person.id);
-    theirMessages.forEach(addMessage);
-    myMessages.forEach(addMessage);
+    const result = await sendPairIntro(person.id, me);
+    void refreshPairs();
 
+    if (result.pair) applyPair(result.pair);
+    // Nothing landed, so let them try again rather than stranding the CTA.
+    else sentRef.current = false;
+
+    sendingRef.current = false;
     setSending(false);
-    setCelebrating(true);
+    if (result.connected) setCelebrating(true);
   }, [
     ready,
     sending,
+    useSaved,
+    myIntro,
     answers,
-    theirNotes,
     person.id,
-    sendMyIntro,
-    receiveTheirIntro,
-    addMessage,
+    setMyIntro,
+    suppressNotice,
+    refreshPairs,
+    applyPair,
   ]);
 
   /* -- render ------------------------------------------------------- */
 
   if (!state.hydrated) return <Opening />;
 
-  const myMessages = state.messages.filter((m) => m.personId === person.id && m.from === 'me');
+  const theirIntroMissing = theirIntroLoaded && !theirIntro;
 
   return (
     <div className="flex w-full flex-col" style={{ fontFamily: SANS }}>
@@ -468,7 +613,18 @@ function Exchange({ person }: { person: SeedPersona }) {
                 You both answered all three. The chat is open.
               </p>
             </>
-          ) : myTurn ? (
+          ) : waiting ? (
+            <>
+              <span className="y-cn-strip-eyebrow" style={{ fontFamily: MONO }}>
+                Intro sent
+              </span>
+              <h2 className="y-cn-strip-title">Your intro is with {firstName}.</h2>
+              <p className="y-cn-strip-sub">
+                They&rsquo;ll get it next time they open Yellow. The chat opens the moment
+                they send theirs back.
+              </p>
+            </>
+          ) : (
             <>
               <span className="y-cn-strip-eyebrow" style={{ fontFamily: MONO }}>
                 Your turn
@@ -477,32 +633,45 @@ function Exchange({ person }: { person: SeedPersona }) {
                 Answer all three. Neither of you can message until both have.
               </p>
             </>
-          ) : (
-            <>
-              <span className="y-cn-strip-eyebrow" style={{ fontFamily: MONO }}>
-                <span className="y-cn-pulse" aria-hidden />
-                {firstName} is answering
-              </span>
-              <p className="y-cn-strip-sub">
-                {firstName} went first. Three questions, one voice note each.
-              </p>
-            </>
           )}
         </div>
       </header>
 
       <div className="pt-[18px]">
-        {theirNotes.map((note, i) => {
-          const theirIn = alreadyConnected || arrived > i;
-          const mine = alreadyConnected
-            ? (myMessages.find((m) => m.id.startsWith(`me-${person.id}-${note.key}-`)) ??
-              (myMessages.length >= QUESTIONS.length ? myMessages[i] : undefined))
-            : undefined;
-          const mineIn = alreadyConnected ? Boolean(mine) : Boolean(answers[note.key]);
-          const done = theirIn && mineIn;
+        {theirIntroMissing && !alreadyConnected ? (
+          <div className="y-cn-empty">
+            <span className="y-cn-strip-eyebrow" style={{ fontFamily: MONO }}>
+              Nothing yet
+            </span>
+            <p className="y-cn-empty-line">
+              {waiting ? (
+                <>
+                  {firstName} hasn&rsquo;t recorded their intro yet. Yours is waiting for
+                  them.
+                </>
+              ) : (
+                <>
+                  {firstName} hasn&rsquo;t recorded their intro yet. Send yours and
+                  they&rsquo;ll get it the moment they do.
+                </>
+              )}
+            </p>
+          </div>
+        ) : null}
+
+        {QUESTIONS.map((question, i) => {
+          const theirClip = theirIntro?.[question.key];
+          const myClip = useSaved ? myIntro?.[question.key] : undefined;
+          const theirIn = Boolean(pair?.theirIntroSent);
+          // Lights as soon as *you* have an answer for this question, not only
+          // once the send lands — the rail's job is per-question feedback while
+          // you work. The node only completes on server truth.
+          const mineIn =
+            Boolean(pair?.myIntroSent) || Boolean(myClip) || Boolean(answers[question.key]);
+          const done = theirIn && Boolean(pair?.myIntroSent);
 
           return (
-            <section className="y-cn-step" key={note.key}>
+            <section className="y-cn-step" key={question.key}>
               <div className="y-cn-rail" aria-hidden>
                 <span className={`y-cn-node${done ? ' y-cn-node-done' : ''}`}>
                   <span className={`y-cn-half${theirIn ? ' y-cn-half-them' : ''}`} />
@@ -513,54 +682,65 @@ function Exchange({ person }: { person: SeedPersona }) {
                 ) : null}
               </div>
 
-              <h2 className="y-cn-q">{note.label}</h2>
+              <h2 className="y-cn-q">{question.label}</h2>
 
               <div className="y-cn-slot">
-                {theirIn ? (
+                {theirClip ? (
                   <VoiceNoteBubble
                     className="y-cn-enter"
                     side="them"
-                    kind="voice"
-                    text={note.text}
-                    durationSec={note.durationSec}
-                    waveSeed={note.waveSeed}
+                    kind={clipKind(theirClip)}
+                    text={theirClip.text}
+                    durationSec={theirClip.durationSec}
+                    waveSeed={theirClip.waveSeed}
+                    audioUrl={theirUrls[question.key] ?? null}
                     accent={person.gradient}
                     label={`${firstName}’s answer`}
                   />
-                ) : (
-                  <span className="y-cn-typing" aria-label={`${firstName} is recording an answer`}>
+                ) : !theirIntroLoaded ? (
+                  <span className="y-cn-typing" aria-label={`Loading ${firstName}’s answer`}>
                     <span className="y-cn-dot" style={{ animationDelay: '0ms' }} />
                     <span className="y-cn-dot" style={{ animationDelay: '160ms' }} />
                     <span className="y-cn-dot" style={{ animationDelay: '320ms' }} />
                   </span>
-                )}
+                ) : null}
 
-                {alreadyConnected ? (
-                  mine ? (
-                    <VoiceNoteBubble
-                      side="me"
-                      kind={mine.kind}
-                      text={mine.text}
-                      durationSec={mine.durationSec}
-                      waveSeed={mine.waveSeed}
-                      audioUrl={getAudioUrl(mine.id) ?? null}
-                      label="Your answer"
-                    />
-                  ) : null
-                ) : myTurn ? (
+                {myClip ? (
+                  <VoiceNoteBubble
+                    side="me"
+                    kind={clipKind(myClip)}
+                    text={myClip.text}
+                    durationSec={myClip.durationSec}
+                    waveSeed={myClip.waveSeed}
+                    audioUrl={myUrls[question.key] ?? null}
+                    label="Your answer"
+                  />
+                ) : waiting || alreadyConnected ? null : (
                   <div className="y-cn-enter">
                     <VoiceRecorder
-                      id={`${person.id}-${note.key}`}
-                      question={note.label}
+                      id={`${person.id}-${question.key}`}
+                      question={question.label}
                       disabled={sending || celebrating}
-                      onChange={(answer) => setAnswer(note.key, answer)}
+                      onChange={(answer) => setAnswer(question.key, answer)}
                     />
                   </div>
-                ) : null}
+                )}
               </div>
             </section>
           );
         })}
+
+        {useSaved && !waiting && !alreadyConnected ? (
+          <button
+            type="button"
+            className="y-cn-quiet"
+            style={{ fontFamily: MONO }}
+            onClick={() => setRerecording(true)}
+            disabled={sending}
+          >
+            Record again
+          </button>
+        ) : null}
       </div>
 
       {alreadyConnected ? (
@@ -573,7 +753,16 @@ function Exchange({ person }: { person: SeedPersona }) {
             Connected
           </p>
         </footer>
-      ) : myTurn ? (
+      ) : waiting ? (
+        <footer className="y-cn-foot">
+          <span className="y-cn-cta y-cn-cta-status" aria-live="polite">
+            Waiting on {firstName}
+          </span>
+          <Link href="/home" className="y-cn-quiet" style={{ fontFamily: MONO }}>
+            Back to matches
+          </Link>
+        </footer>
+      ) : (
         <footer className="y-cn-foot">
           <button
             type="button"
@@ -585,10 +774,12 @@ function Exchange({ person }: { person: SeedPersona }) {
             {!sending && ready ? <Arrow /> : null}
           </button>
           <p className="y-cn-count" style={{ fontFamily: MONO }}>
-            {answeredCount} of {QUESTIONS.length} answered
+            {useSaved
+              ? 'Your recorded intro'
+              : `${answeredCount} of ${QUESTIONS.length} answered`}
           </p>
         </footer>
-      ) : null}
+      )}
 
       {celebrating ? (
         <Celebration
@@ -615,43 +806,4 @@ function Arrow() {
       />
     </svg>
   );
-}
-
-/* ------------------------------------------------------------------ *
- * Best-effort upload
- * ------------------------------------------------------------------ */
-
-/**
- * Presign, then PUT. Every failure path returns `null`, which simply means the
- * message carries no `s3Key` and playback stays on the local object URL. The
- * bucket may not exist yet — that must never stop the exchange.
- */
-async function uploadClip(messageId: string, blob: Blob): Promise<string | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), UPLOAD_BUDGET_MS);
-  try {
-    const presign = await fetch('/api/audio', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId }),
-      signal: controller.signal,
-    });
-    if (!presign.ok) return null;
-
-    const data = (await presign.json()) as { putUrl?: string; key?: string };
-    if (!data.putUrl || !data.key) return null;
-
-    const put = await fetch(data.putUrl, {
-      method: 'PUT',
-      body: blob,
-      // Must match the content type the URL was signed with.
-      headers: { 'Content-Type': 'audio/webm' },
-      signal: controller.signal,
-    });
-    return put.ok ? data.key : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
 }

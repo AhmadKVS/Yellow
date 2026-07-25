@@ -10,6 +10,7 @@
  * so a `'use client'` file can import it.
  */
 
+import { isVoiceIntro, type VoiceIntro } from '@/lib/intro';
 import { SEED_PERSONAS } from '@/lib/seed';
 import type { Profile, SeedPersona } from '@/lib/types';
 
@@ -27,11 +28,16 @@ export interface PeopleResult {
 /**
  * What a directory row actually holds. Real users have no scripted `intro`
  * or `cannedReplies` — only the bundled demo personas do — so both are
- * optional here and synthesised by `toPerson`.
+ * optional here and stood in for by `toPerson`.
+ *
+ * `voiceIntro` is the real one: three answers the person recorded, written by
+ * `POST /api/intro`. It is passed through untouched and is `undefined` until
+ * they record, which is a state the UI says out loud rather than papers over.
  */
 export interface DirectoryPerson extends Profile {
   intro?: SeedPersona['intro'];
   cannedReplies?: string[];
+  voiceIntro?: VoiceIntro;
 }
 
 /**
@@ -242,6 +248,11 @@ function isCompleteIntro(value: unknown): value is SeedPersona['intro'] {
  * component (`Bubble`, `ProfileCard`, `Celebration`, the connect rail) is
  * typed against `SeedPersona`, so widening happens here — once — instead of
  * scattering `?.` through five pages and risking a crash on the common case.
+ *
+ * `voiceIntro` is the one field that is never stood in for. The synthesised
+ * `intro` below is a *label* — copy for a card that has to say something — and
+ * screens that present recorded answers must branch on `voiceIntro` instead,
+ * because attributing invented sentences to a real person was the bug.
  */
 export function toPerson(person: DirectoryPerson): SeedPersona {
   const name = person.name.trim();
@@ -268,6 +279,7 @@ export function toPerson(person: DirectoryPerson): SeedPersona {
     // Empty is meaningful: the chat screen falls through to its generic
     // replies rather than inventing words for a real person.
     cannedReplies: isStringArray(person.cannedReplies) ? person.cannedReplies : [],
+    voiceIntro: isVoiceIntro(person.voiceIntro) ? person.voiceIntro : undefined,
   };
 }
 

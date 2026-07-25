@@ -76,6 +76,33 @@ common source of wasted time here:
 (`stranger → nudged → intro_pending → connected`) · `Message` · `Hub` · `AppState`
 · `MatchResult`.
 
+### The pair record (`lib/pair.ts` · `lib/pairServer.ts`)
+
+Everything else in Yellow is per-user state keyed by one Cognito `sub`. A connection
+belongs to *both* accounts, so it gets its own row in the same `yellow-app` table under
+a deterministic key **`pair#<a>#<b>`** — the two member ids sorted lexicographically, so
+either side computes the same string without knowing who wrote the row first.
+
+The row holds `introA` / `introB` (each side's sent flag), `connectedAt`, and an
+append-only `messages` list. Rules that must survive any edit:
+
+- **`connectedAt` is server-authoritative.** The client never decides it is connected.
+  `POST /api/pair/intro` stamps it only when both intro flags are set, guarded by
+  `attribute_not_exists(connectedAt)` so a race can't stamp twice. The old local-only
+  "they answered instantly" fiction is gone, along with the canned DM replies.
+- **Messages append with `list_append`**, never read-modify-write — two people sending
+  inside one round trip would otherwise lose a message.
+- **`ensurePair` is an idempotent `UpdateCommand`** with `if_not_exists`, never a
+  `PutCommand`, which would wipe an existing thread.
+- The stored message carries `senderId`, not `from: 'me' | 'them'`. Each viewer maps it
+  through `toViewerMessage`, which is what keeps `Message` in `lib/types.ts` frozen.
+- Pair data lives in plain `useState` beside `people` — **outside** the persisted blob,
+  so it can never reach localStorage or the state row.
+
+Voice intros are recorded once and stored as `voiceIntro` on the user's `yellow-users`
+directory row; the audio itself sits in S3 under `audio/<ownerId>/<messageId>.webm` and
+is presigned at read time, never stored as a URL.
+
 ### Matching (`lib/match.ts`)
 
 Pure and deterministic — the bubble layout depends on stability.
@@ -120,6 +147,12 @@ Every remote dependency degrades instead of breaking:
 | S3 upload | in-memory object URL; the connection still completes |
 | Microphone denied | typed-text intro |
 | Cognito unconfigured | auth wall **fails open** (see below) |
+| `GET /api/pairs` | `{ ok: false }` — the store refuses to reconcile, so a transient failure can't delete real connections |
+| `GET /api/pair` | `{ pair: null }`, identical to "not a member"; the screen keeps its last poll |
+| `POST /api/pair/intro` | `connected: false` — the connect screen stays in "waiting" and the next poll picks up the truth |
+| `POST /api/pair/message` | quiet "not sent" marker on that bubble, never an error screen |
+| `GET /api/intro` | `{ intro: null }` — the connect screen says honestly that they haven't recorded yet |
+| Presigned playback (`GET /api/audio?key=`) | `{ ok: false }` at 200; the waveform still renders, playback is just silent |
 
 **The auth wall deliberately fails open** when `COGNITO_USER_POOL_ID` is absent.
 Locking an app that has no working auth would brick it with no way in. This is why a

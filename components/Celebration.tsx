@@ -231,7 +231,7 @@ export default function Celebration({
         </p>
         <h1 className="y-cel-h1">You&rsquo;re connected!</h1>
         <p className="y-cel-sub">
-          You both went first. That&rsquo;s the whole idea — and the chat is open now.
+          You both put yourself out there before either of you had to. The chat is open.
         </p>
 
         <div className="y-cel-actions">
