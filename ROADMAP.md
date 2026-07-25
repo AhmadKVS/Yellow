@@ -1,0 +1,128 @@
+# Yellow — 10-Hour Roadmap
+
+Status of the hackathon build, what shipped, and what's next in priority order.
+See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
+
+**Live:** https://main.d107b9gzaimhij.amplifyapp.com
+
+---
+
+## Shipped ✅
+
+### Hours 0–1 · Foundation
+- Next.js 16 scaffold read against `node_modules/next/dist/docs/` before any code —
+  Turbopack default, Promise `params`, `proxy.ts`, Tailwind v4 CSS-first.
+- `lib/types.ts` frozen as the shared contract so parallel work couldn't diverge.
+- Yellow theme tokens; `PhoneFrame` + `TabBar` shell.
+- DynamoDB `yellow-app` created; `scripts/provision.mjs` written (idempotent).
+
+### Hours 1–3 · Data layer + the signature screen
+- `TAG_VOCAB` (~46 canonical tags) + 10 seeded personas with scripted intros.
+- `lib/match.ts` — pure scoring, soft skills weighted 2×, min-max normalised.
+- `lib/localExtract.ts` — offline keyword extractor onto the same vocabulary.
+- **Bubble map**: golden-angle placement, 30-iteration relaxation for a
+  collision-free cluster, then a `requestAnimationFrame` sim writing transforms
+  straight to the DOM (React never re-renders per frame). Drag-to-pan, clamped zoom,
+  `prefers-reduced-motion` fallback.
+- `ProfileCard` bottom sheet + `MatchNudge`.
+
+### Hours 3–5 · The full narrative
+- **Onboarding** — three steps (Write → Read → Confirm) with a beam sweeping between
+  the lines of your own words during extraction; `TagEditor` snaps free text to
+  canonical vocab casing.
+- **Bedrock extraction** live via `us.anthropic.claude-haiku-4-5-20251001-v1:0` using
+  structured outputs, with silent fallback to local extraction.
+- **Voice intro exchange** — real `MediaRecorder` capture, analyser-driven waveform,
+  split-node rail that lights up as each side answers, typed fallback if the mic is
+  denied, celebration on unlock.
+- **DM thread** with day dividers, message grouping, canned replies; **project hubs**
+  (create, add/remove members, connected-only picker).
+- **`/chats`** conversation list (fixed a dead-end where the tab pointed at `/home`).
+
+### Hours 5–7 · Real AWS, real users
+- **Desktop layout** — sidebar nav, full-bleed bubble canvas, reading column.
+- **S3 voice storage** — bucket + CORS, presigned PUT/GET round-trip verified.
+- **Live user directory** — `yellow-users` table, `/api/people`, mock data off by
+  default behind `NEXT_PUBLIC_DEMO_PERSONAS`.
+- **Cognito auth** — custom signup/login pages, httpOnly session cookies, five API
+  routes, `proxy.ts` enforcing the wall.
+- **Per-user state keyed by Cognito `sub`** — fixed a bug where every account shared
+  one DynamoDB row and clobbered each other's messages.
+- Sign-out in the sidebar (and a mobile strip) — previously there was **no way out**
+  of the app once signed in.
+
+### Hours 7–8 · Deploy
+- `amplify.yml` + `DEPLOY.md`; fixed the build spec to forward `COGNITO_` to the SSR
+  runtime (without it the deployed app had no login wall at all).
+- Created `YellowAppAccess` policy + `YellowAmplifySSRComputeRole` and attached it —
+  the compute role was `null`, so every API route had no AWS identity.
+- Verified end-to-end **on the deployed URL**: signup, login, session, `/api/people`
+  returning `source: "dynamodb"`.
+
+---
+
+## Next up 🎯
+
+### P0 — Before demoing
+- [ ] **Register 2–3 real accounts on the live URL.** The directory is empty; the
+      first user sees "You're the first one here." The bubble map needs a crowd for
+      "sized by overlap" to read at all. If the room is empty at demo time, set
+      `NEXT_PUBLIC_DEMO_PERSONAS=true` and rebuild.
+- [ ] **Walk the full flow on the deployed site**: signup → email code → onboarding →
+      bubble map → nudge → voice intro → celebration → DM → hub.
+- [ ] **Pre-grant microphone permission** in the demo browser so no OS prompt appears
+      on stage.
+- [ ] Confirm email delivery timing — Cognito's default sender is capped ~50/day and
+      can land in spam. If judges sign up live, this is the riskiest dependency.
+
+### P1 — Known issues
+- [ ] **Same-browser account switching** briefly shows the previous user's profile
+      (localStorage wins on `savedAt` before cloud reconciles). Fine across devices;
+      avoid demoing two accounts in one window.
+- [ ] **9 lint errors** (`react-hooks/refs`, writing refs during render) in
+      `BubbleField`, `MatchNudge`, `ProfileCard`. Cosmetic — build and runtime are
+      unaffected — but they should be moved into effects.
+- [ ] **Console noise on `/login` and `/signup`**: the store fires `/api/state` and
+      `/api/people` while signed out and the wall correctly 401s them. Harmless, but
+      visible with devtools open. Skip those fetches on public routes.
+- [ ] **Orphaned `me` row** in `yellow-app` from the pre-auth era. Safe to delete.
+
+### P2 — Product gaps
+- [ ] Real users have no `intro`/`cannedReplies`; `toPerson()` synthesises a neutral
+      intro from their tagline. Their side of the exchange should be a real recorded
+      answer, delivered asynchronously.
+- [ ] Voice notes only play back in-session unless re-fetched from S3 — wire playback
+      to the presigned GET so audio survives a refresh.
+- [ ] Hubs are list/create/add-member only. No hub chat, no tasks.
+- [ ] Match nudges are computed client-side on load. Real notifications need a
+      server-side job.
+
+### P3 — Hardening
+- [ ] **Verify JWTs against the pool's JWKS** in `proxy.ts`. It currently checks
+      presence and expiry only, relying on the httpOnly cookie.
+- [ ] Rotate the AWS access key and Cognito client secret (both passed through a
+      chat transcript).
+- [ ] Detach `IAMFullAccess` and `AdministratorAccess-Amplify` from the `Yellow` IAM
+      user — granted only to automate the deploy.
+- [ ] Move Cognito email to SES for volume beyond ~50/day.
+- [ ] Scope S3 CORS to the Amplify domain instead of `*`.
+- [ ] `/api/state` trusts the caller's `userId` param; it should derive identity from
+      the session cookie server-side so one user can't read another's row.
+
+---
+
+## Demo script
+
+1. Visit the live URL in a fresh window → lands on **`/login`**.
+2. **Create account** → six-digit code → confirm.
+3. **Onboarding**: paste a founder blurb → watch the beam read it → Claude returns
+   tags → edit one → Enter Yellow.
+4. **Bubble map**: point out size and distance both encoding overlap. Tap a
+   *lower*-ranked bubble first — the smaller "You share N" proves the scoring is real.
+5. **Nudge** fires → Connect → their answers arrive → record your own → send →
+   celebration.
+6. **DM** opens. Create a **hub**, add your connection.
+7. **Cloud proof**: DynamoDB rows, the S3 object, the Cognito user — all live.
+
+**If the room is empty:** flip `NEXT_PUBLIC_DEMO_PERSONAS=true`, rebuild, and create a
+real account on top to show it isn't static.
