@@ -40,8 +40,6 @@ const GOLDEN = Math.PI * (137.5 / 180);
 const SCALE_MIN = 0.6;
 const SCALE_MAX = 1.6;
 
-const MONO =
-  'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace';
 const SANS =
   'var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 
@@ -49,6 +47,14 @@ const clamp = (v: number, lo: number, hi: number) =>
   v < lo ? lo : v > hi ? hi : v;
 const clamp01 = (n: number) =>
   Number.isFinite(n) ? clamp(n, 0, 1) : 0;
+
+/* Threads run cream at low overlap and warm to systemYellow at high, so the
+   map's strongest links read before you've parsed a single label. Computed
+   at render, never per frame. */
+function threadColor(norm: number): string {
+  const t = clamp01(norm);
+  return `rgb(255 ${Math.round(248 - t * 34)} ${Math.round(231 - t * 221)})`;
+}
 
 /* Client Components still render on the server for the initial HTML, and
    useLayoutEffect logs a warning there. Same hook order either way. */
@@ -142,46 +148,76 @@ function FieldStyles() {
   return (
     <style href="yellow-field" precedence="high">{`
 @keyframes y-breathe{
-  0%,100%{ transform:scale(1); opacity:.72 }
-  50%    { transform:scale(1.085); opacity:1 }
-}
-@keyframes y-ring{
-  0%,100%{ transform:scale(1); opacity:.5 }
-  50%    { transform:scale(1.04); opacity:.9 }
+  0%,100%{ transform:scale(1); opacity:.58 }
+  50%    { transform:scale(1.06); opacity:.95 }
 }
 .y-halo{ animation: y-breathe 6.4s cubic-bezier(.45,0,.55,1) infinite; }
-.y-mering{ animation: y-ring 6.4s cubic-bezier(.45,0,.55,1) infinite; }
 .y-recenter{
-  transition: opacity 420ms cubic-bezier(.22,1,.36,1),
-              transform 420ms cubic-bezier(.22,1,.36,1),
-              color 200ms linear, border-color 200ms linear;
+  display:inline-flex; align-items:center; gap:7px;
+  height:44px; padding:0 16px 0 14px; border-radius:9999px; cursor:pointer;
+  font-size:14px; font-weight:600; letter-spacing:-.01em; color:#FFD60A;
+  background:rgba(255,214,10,.13);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
+  backdrop-filter:blur(18px) saturate(1.6);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);
+  transition: opacity 380ms cubic-bezier(.32,.72,0,1),
+              transform 380ms cubic-bezier(.32,.72,0,1),
+              background 200ms linear, border-color 200ms linear;
 }
-.y-recenter:hover{ color:#FFD60A; border-color:rgba(255,214,10,.5); }
-.y-recenter:focus-visible{ outline:2px solid #FFD60A; outline-offset:3px; }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))){
+  .y-recenter{ background:rgba(60,48,10,.85); border-color:rgba(255,214,10,.34); }
+}
+.y-noglass .y-recenter{
+  backdrop-filter:none; -webkit-backdrop-filter:none;
+  background:rgba(60,48,10,.85); border-color:rgba(255,214,10,.34);
+}
+.y-recenter:hover{ background:rgba(255,214,10,.2); border-color:rgba(255,255,255,.24); }
+.y-recenter:active{ background:rgba(255,214,10,.26); }
+.y-recenter:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px; }
+/* The grid is the space itself: it lives inside the camera, so panning and
+   zooming carry it along with no per-frame work at all. Oversized well past
+   the container and masked to nothing long before its own edge, so no seam
+   is reachable at any pan offset or zoom level. Graph-paper hierarchy —
+   cream minors every 56px, a yellow major every fourth — so it reads as
+   instrumentation rather than wallpaper, and gives the glass discs
+   something real to refract as they drift across it. */
+.y-grid{
+  position:absolute; inset:-40%; pointer-events:none;
+  background-position:50% 50%;
+  background-repeat:repeat;
+  background-size:224px 224px, 224px 224px, 56px 56px, 56px 56px;
+  /* majors are 2px on purpose: a 1px line is annihilated by the discs'
+     frost, and the whole point of the pairing is seeing the grid bend
+     through the glass. Alpha stays low because the discs brighten whatever
+     is behind them — the lines land far hotter under a bubble than beside
+     one, and pushed any higher they start competing with the cluster. */
+  background-image:
+    linear-gradient(to right, rgba(255,214,10,.22) 0 2px, transparent 2px),
+    linear-gradient(to bottom, rgba(255,214,10,.22) 0 2px, transparent 2px),
+    linear-gradient(to right, rgba(255,248,231,.125) 0 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,248,231,.125) 0 1px, transparent 1px);
+  -webkit-mask-image:radial-gradient(ellipse 34% 34% at 50% 50%,
+    #000 0%, #000 56%, rgba(0,0,0,0) 100%);
+  mask-image:radial-gradient(ellipse 34% 34% at 50% 50%,
+    #000 0%, #000 56%, rgba(0,0,0,0) 100%);
+}
 @media (prefers-reduced-motion: reduce){
-  .y-halo, .y-mering{ animation:none; }
+  .y-halo{ animation:none; opacity:.8 }
+  .y-recenter{ transition-duration:1ms }
 }
 `}</style>
   );
 }
 
-const GRAIN =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E\")";
-
-/* Two off-centre embers that belong to the room, not the cluster — they
-   stay put so panning reads as travelling through space. */
-const AMBIENT = [
-  'radial-gradient(42% 30% at 84% 12%, rgba(255,214,10,.075) 0%, rgba(255,214,10,0) 72%)',
-  'radial-gradient(46% 34% at 12% 88%, rgba(184,134,11,.09) 0%, rgba(184,134,11,0) 74%)',
-].join(',');
-
-/* The cluster's own light. Lives inside the camera so it travels with the
-   bubbles instead of leaving a lit patch of empty canvas behind. */
+/* The cluster's own light, kept to a whisper — the spheres get their pop
+   from sitting on true black, not from bloom. Lives inside the camera so
+   it travels with them instead of leaving a lit patch of empty canvas. */
 const CORE_GLOW =
-  'radial-gradient(58% 42% at 50% 50%, rgba(255,201,10,.19) 0%, rgba(255,150,0,.07) 44%, rgba(255,150,0,0) 74%)';
+  'radial-gradient(62% 48% at 50% 50%, rgba(255,201,10,.13) 0%, rgba(255,150,0,.05) 52%, rgba(255,150,0,0) 78%)';
 
 const VIGNETTE =
-  'radial-gradient(140% 108% at 50% 48%, rgba(11,10,8,0) 52%, rgba(8,7,5,.34) 82%, rgba(6,5,3,.7) 100%)';
+  'radial-gradient(140% 108% at 50% 48%, rgba(5,4,3,0) 62%, rgba(5,4,3,.34) 84%, rgba(3,2,1,.8) 100%)';
 
 export default function BubbleField({
   me,
@@ -214,6 +250,10 @@ export default function BubbleField({
 
   const reducedRef = useRef(false);
   const movedRef = useRef(false);
+  /* Glass costs a backdrop read per disc per frame. If this machine can't
+     pay for it, the discs drop to the opaque fallback fill — motion beats
+     material. Flipped at most once, by a classList write, never a render. */
+  const degradedRef = useRef(false);
 
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -365,6 +405,10 @@ export default function BubbleField({
     /* --- the loop --- */
     let raf = 0;
     let last = 0;
+    let winFrames = 0;
+    let winTime = 0;
+    let windows = 0;
+    let bad = 0;
 
     const paint = (t: number) => {
       const nodesNow = nodesRef.current;
@@ -408,6 +452,24 @@ export default function BubbleField({
       const t = now / 1000;
       const dt = last ? Math.min(0.05, (now - last) / 1000) : 0.016;
       last = now;
+
+      /* frame budget watch — numbers only, no allocation, and it stops
+         looking after the first few seconds */
+      if (!degradedRef.current && windows < 6) {
+        winFrames++;
+        winTime += dt;
+        if (winTime >= 1) {
+          windows++;
+          // the first window is mount jank, never evidence
+          bad = windows > 1 && winFrames / winTime < 36 ? bad + 1 : 0;
+          if (bad >= 2) {
+            degradedRef.current = true;
+            containerRef.current?.classList.add('y-noglass');
+          }
+          winFrames = 0;
+          winTime = 0;
+        }
+      }
 
       if (!reducedRef.current && nodesRef.current.length) {
         const ns = nodesRef.current;
@@ -655,16 +717,9 @@ export default function BubbleField({
       className={`relative h-full w-full select-none overflow-hidden ${
         className ?? ''
       }`}
-      style={{ background: '#0B0A08', touchAction: 'none', cursor: 'grab' }}
+      style={{ background: '#050403', touchAction: 'none', cursor: 'grab' }}
     >
       <FieldStyles />
-
-      {/* atmosphere — stays put while the cluster travels through it */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{ backgroundImage: AMBIENT }}
-      />
 
       {/* camera */}
       <div
@@ -675,9 +730,11 @@ export default function BubbleField({
           transformOrigin: '50% 50%',
           willChange: 'transform',
           opacity: 0,
-          transition: 'opacity 760ms cubic-bezier(.22,1,.36,1)',
+          transition: 'opacity 620ms cubic-bezier(.32,.72,0,1)',
         }}
       >
+        <div aria-hidden className="y-grid" />
+
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
@@ -685,14 +742,13 @@ export default function BubbleField({
         />
 
         {/* gravity threads: the pull between you and each person, drawn as
-            light. Brightness falls off steeply so only real overlap shows. */}
+            fine instrument lines. Every thread stays legible; the strongest
+            overlap warms from cream to yellow and thickens a hair, so the
+            structure of the map reads at a glance from across a room. */}
         <svg
           aria-hidden
           className="pointer-events-none absolute inset-0 h-full w-full"
-          style={{
-            overflow: 'visible',
-            filter: 'drop-shadow(0 0 5px rgba(255,196,10,.45))',
-          }}
+          style={{ overflow: 'visible' }}
         >
           {visible.map((m) => {
             const norm = clamp01(m.normalized);
@@ -706,11 +762,11 @@ export default function BubbleField({
                     threadEls.current.delete(m.person.id);
                   };
                 }}
-                stroke={on ? '#FFE482' : '#FFC300'}
-                strokeWidth={on ? 1.9 : 0.55 + norm * norm * 1.25}
+                stroke={on ? '#FFD60A' : threadColor(norm)}
+                strokeWidth={on ? 1.8 : 1.05 + norm * 0.7}
                 strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
-                opacity={on ? 0.8 : 0.05 + norm * norm * 0.3}
+                opacity={on ? 0.92 : 0.22 + norm * 0.34}
                 /* `visibility` is owned by the rAF loop, never by React */
                 style={{
                   transition:
@@ -733,21 +789,23 @@ export default function BubbleField({
               zIndex: 3,
             }}
           >
+            {/* the screen's one glow: you, breathing */}
             <div
               aria-hidden
               className="y-halo pointer-events-none absolute rounded-full"
               style={{
-                inset: -34,
+                inset: -30,
                 background:
-                  'radial-gradient(circle, rgba(255,214,10,.20) 0%, rgba(255,178,0,.08) 46%, rgba(255,178,0,0) 72%)',
+                  'radial-gradient(circle, rgba(255,214,10,.20) 0%, rgba(255,178,0,.07) 46%, rgba(255,178,0,0) 72%)',
               }}
             />
+            {/* "you are here" — a hairline marker, not more light */}
             <div
               aria-hidden
-              className="y-mering pointer-events-none absolute rounded-full"
+              className="pointer-events-none absolute rounded-full"
               style={{
-                inset: -11,
-                border: '1px solid rgba(255,214,10,.20)',
+                inset: -9,
+                border: '1px solid rgba(255,214,10,.16)',
               }}
             />
             <Bubble
@@ -797,20 +855,11 @@ export default function BubbleField({
         })}
       </div>
 
-      {/* depth + film grain, above everything, never intercepts pointers */}
+      {/* depth from black, above everything, never intercepts pointers */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{ backgroundImage: VIGNETTE }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: GRAIN,
-          opacity: 0.035,
-          mixBlendMode: 'screen',
-        }}
       />
 
       {/* only appears once you've wandered off */}
@@ -818,20 +867,20 @@ export default function BubbleField({
         ref={recenterRef}
         type="button"
         onClick={recenter}
-        className="y-recenter absolute bottom-4 right-4 rounded-full px-3 py-1.5"
-        style={{
-          visibility: 'hidden',
-          opacity: 0,
-          fontFamily: MONO,
-          fontSize: 10,
-          letterSpacing: '0.14em',
-          textTransform: 'uppercase',
-          color: 'rgba(255,248,231,.62)',
-          background: 'rgba(20,17,10,.72)',
-          border: '1px solid rgba(255,214,10,.22)',
-          backdropFilter: 'blur(8px)',
-        }}
+        className="y-recenter absolute bottom-4 right-4"
+        style={{ visibility: 'hidden', opacity: 0, fontFamily: SANS }}
       >
+        <svg width="17" height="17" viewBox="0 0 17 17" aria-hidden>
+          <g
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          >
+            <circle cx="8.5" cy="8.5" r="4.1" />
+            <path d="M8.5 1v2.1M8.5 13.9V16M16 8.5h-2.1M3.1 8.5H1" />
+          </g>
+        </svg>
         Recenter
       </button>
 
@@ -840,8 +889,9 @@ export default function BubbleField({
           className="pointer-events-none absolute inset-x-0 bottom-14 text-center"
           style={{
             fontFamily: SANS,
-            fontSize: 13,
-            color: 'rgba(255,248,231,.42)',
+            fontSize: 13.5,
+            letterSpacing: '-0.006em',
+            color: 'rgba(255,248,231,.40)',
           }}
         >
           No one orbiting yet. Add a few interests and they&rsquo;ll show up

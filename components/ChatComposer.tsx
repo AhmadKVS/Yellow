@@ -63,41 +63,49 @@ function ComposerStyles() {
     <style href="yellow-composer" precedence="high">{`
 .y-cc{ --lvl:0; display:flex; align-items:center; gap:8px; width:100%; margin:0 }
 
+/* iOS composer field: a neutral hairline at rest that tints only on focus. */
 .y-cc-input{
-  flex:1; min-width:0; height:44px; padding:0 15px;
-  border-radius:9999px; border:1px solid rgba(255,214,10,.15);
+  flex:1; min-width:0; height:44px; padding:0 16px;
+  border-radius:9999px; border:1px solid rgba(255,255,255,.1);
   background:rgba(255,248,231,.045); color:#FFF8E7;
   font-size:14.5px; letter-spacing:-.008em; outline:none;
   transition:border-color 220ms linear, background 220ms linear;
 }
 .y-cc-input::placeholder{ color:rgba(255,248,231,.3) }
-.y-cc-input:focus{ border-color:rgba(255,214,10,.5); background:rgba(255,248,231,.07) }
+.y-cc-input:focus{ border-color:rgba(255,214,10,.45); background:rgba(255,248,231,.07) }
 .y-cc-input:disabled{ opacity:.5 }
 
+/* Chrome glyphs sit bare — the 44px box is the touch target, not a chip. */
 .y-cc-btn{
   display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
-  width:44px; height:44px; border-radius:9999px; cursor:pointer;
-  color:rgba(255,248,231,.66); background:rgba(255,248,231,.045);
-  border:1px solid rgba(255,214,10,.15);
-  transition:color 200ms linear, border-color 200ms linear, background 200ms linear;
+  width:44px; height:44px; border-radius:9999px; border:0; padding:0;
+  cursor:pointer; background:transparent; color:rgba(255,248,231,.55);
+  transition:color 180ms linear, background 180ms linear;
 }
-.y-cc-btn:hover:not(:disabled){ color:#FFF8E7; border-color:rgba(255,214,10,.42); background:rgba(255,214,10,.07) }
+.y-cc-btn:hover:not(:disabled){ color:#FFD60A; background:rgba(255,255,255,.045) }
 .y-cc-btn:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
 .y-cc-btn:disabled{ opacity:.35; cursor:default }
 
+/* The send glyph rides a small filled disc inside a full-size touch target,
+   so the one saturated element stays proportionate to the field beside it. */
 .y-cc-send{
   display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
-  width:44px; height:44px; border-radius:9999px; border:0; cursor:pointer;
-  color:#1A1200; background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
-  box-shadow:0 8px 22px -10px rgba(255,195,0,.75), inset 0 1px 0 rgba(255,255,255,.6);
-  transition:transform 240ms cubic-bezier(.22,1,.36,1), opacity 200ms linear, filter 200ms linear;
+  width:44px; height:44px; border-radius:9999px; border:0; padding:0;
+  background:transparent; cursor:pointer;
 }
-.y-cc-send:hover:not(:disabled){ filter:brightness(1.06); transform:translateY(-1px) }
-.y-cc-send:active:not(:disabled){ transform:scale(.94); transition-duration:110ms }
-.y-cc-send:focus-visible{ outline:2px solid #FFF8E7; outline-offset:3px }
-.y-cc-send:disabled{
-  cursor:default; opacity:.32; background:rgba(255,248,231,.1);
-  color:rgba(255,248,231,.5); box-shadow:none;
+.y-cc-send:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
+.y-cc-send:disabled{ cursor:default }
+.y-cc-disc{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:34px; height:34px; border-radius:9999px;
+  color:#1A1200; background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
+  box-shadow:0 6px 18px -9px rgba(255,195,0,.8), inset 0 1px 0 rgba(255,255,255,.55);
+  transition:transform 240ms cubic-bezier(.22,1,.36,1), filter 200ms linear;
+}
+.y-cc-send:hover:not(:disabled) .y-cc-disc{ filter:brightness(1.06) }
+.y-cc-send:active:not(:disabled) .y-cc-disc{ transform:scale(.9); transition-duration:110ms }
+.y-cc-send:disabled .y-cc-disc{
+  background:rgba(255,248,231,.1); color:rgba(255,248,231,.4); box-shadow:none;
 }
 
 .y-cc-live{
@@ -125,7 +133,7 @@ function ComposerStyles() {
 
 @media (prefers-reduced-motion: reduce){
   .y-cc-pulse{ animation:none; opacity:.8 }
-  .y-cc-send{ transition-duration:1ms }
+  .y-cc-disc, .y-cc-btn{ transition-duration:1ms }
 }
 `}</style>
   );
@@ -399,6 +407,7 @@ export default function ChatComposer({
 
   const firstName = personName.split(' ')[0];
   const recording = phase === 'recording';
+  const hasDraft = draft.trim().length > 0;
 
   return (
     <form className="y-cc" style={{ fontFamily: SANS }} onSubmit={submit}>
@@ -446,16 +455,18 @@ export default function ChatComposer({
             onClick={finish}
             aria-label="Send this voice note"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
-              <path
-                d="M2.6 8H14M14 8L9 3M14 8l-5 5"
-                stroke="currentColor"
-                strokeWidth="1.9"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-              />
-            </svg>
+            <span className="y-cc-disc" aria-hidden>
+              <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden>
+                <path
+                  d="M2.6 8H14M14 8L9 3M14 8l-5 5"
+                  stroke="currentColor"
+                  strokeWidth="1.9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                />
+              </svg>
+            </span>
           </button>
         </>
       ) : (
@@ -470,7 +481,31 @@ export default function ChatComposer({
             disabled={disabled}
           />
 
-          {micUsable ? (
+          {/* iMessage's trailing control: the mic until you type, the filled send
+              glyph the moment there's something to send. When the mic is
+              unavailable the send button stays mounted (disabled) so the form
+              always keeps a submit control. */}
+          {hasDraft || !micUsable ? (
+            <button
+              type="submit"
+              className="y-cc-send"
+              disabled={disabled || !hasDraft}
+              aria-label="Send message"
+            >
+              <span className="y-cc-disc" aria-hidden>
+                <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden>
+                  <path
+                    d="M8 13.4V3.2M8 3.2 3.4 7.8M8 3.2l4.6 4.6"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                </svg>
+              </span>
+            </button>
+          ) : (
             <button
               type="button"
               className="y-cc-btn"
@@ -493,25 +528,7 @@ export default function ChatComposer({
                 />
               </svg>
             </button>
-          ) : null}
-
-          <button
-            type="submit"
-            className="y-cc-send"
-            disabled={disabled || draft.trim().length === 0}
-            aria-label="Send message"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
-              <path
-                d="M8 14V2.6M8 2.6L3 7.6M8 2.6l5 5"
-                stroke="currentColor"
-                strokeWidth="1.9"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-              />
-            </svg>
-          </button>
+          )}
         </>
       )}
 

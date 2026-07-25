@@ -149,19 +149,93 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
   timestamps, `connectedAt` stamped, and the six voice-intro messages seeded in
   the same shape `markIntroSent`/`seedMessages` would have produced.
 
+### Hours 14–16 · Cross-account identity leak, onboarding cleanup, directory cleanup
+- **Fixed: a new sign-up could open the previous account instead of onboarding.**
+  Root cause was two-fold. `AppStateProvider` lives in the root layout and only
+  resolves identity once per hard page load; a client-side `router.push` after
+  login/signup never re-ran that check, so the app kept rendering whatever
+  identity/profile it loaded when the tab first opened. Meanwhile the local
+  `yellow:v1` cache was a single key shared by whoever last used the browser, and
+  the cloud fetch only ever overwrote it `if (cloud.savedAt > localSavedAt)` — which
+  never happens for a brand-new account, since it has no cloud row yet. Together:
+  signing in as a second account on a browser that had signed in before would show
+  that account the *first* account's cached profile and skip onboarding entirely.
+  Fixed in `lib/store.tsx` (the local blob is now owner-tagged and discarded on a
+  mismatch) and `app/login/page.tsx` / `app/signup/page.tsx` (navigate with
+  `window.location.assign` after a successful sign-in instead of `router.push`, so
+  identity actually re-resolves). See the new invariant in `AGENTS.md`.
+- **Removed the "Or borrow one" example-blurb cards** (The teacher / The tinkerer /
+  The convener) from onboarding's write step, along with their now-dead CSS and the
+  `EXAMPLES`/`EMOJI_FACE` constants that only existed for them.
+- **Directory cleanup.** Removed 10 generated test rows (`ytest-ms0tp867-0..9`) and
+  two demo accounts from the live tables: "Hub Demo" (its `yellow-users` row,
+  `yellow-app` state row, the hub it owned, and that hub's 6 `yellow-hub-items`
+  rows) and "Guest Demo" (`yellow-users` row only — it had no other data).
+  `yellow-users` went from 24 rows to 13. Testing with generated/demo accounts is
+  done — see the new convention in `AGENTS.md` against reintroducing this pattern.
+
 ---
+
+### Hours 16–18 · The Apple redesign
+- **`DESIGN.md` became the visual contract** — written first so five parallel
+  restyle passes produced one language instead of five: true-black `#050403`
+  canvas, three glass recipes (chrome/yellow/clear), a type ladder, pill button
+  grammar, a one-glow-per-screen budget, and Apple's sheet curve.
+- **Glassmorphism as the defining material** (user-directed): frosted yellow-glass
+  bubbles that refract the grid behind them (`brightness(2.8)` in the backdrop
+  filter is what keeps yellow-over-black from going olive), chrome-glass sidebar/
+  bars/sheets, clear-glass received messages. Every glass layer ships a
+  `-webkit-` pair and an `@supports` opaque fallback.
+- **Emoji chrome is gone** — tab/nav icons are stroke SVGs; **avatars are now
+  photo → initials monogram** (`lib/initials.ts`, Apple Contacts grammar:
+  "Ahmad Noori" → AN). The onboarding emoji picker was removed; a live monogram
+  preview forms from the name field instead. `Profile.emoji` stays in the data,
+  never rendered.
+- **The bubble map grid** — hairline graph-paper with brighter yellow major lines
+  every 4th cell, radially masked, moving with pan/zoom; names centered inside
+  discs (labels outside the collision radius kept getting covered — user caught
+  it); photo bubbles get lower-third contact-poster scrims.
+- **Hubs became a Trello board** (user-directed, with a Trello screenshot as the
+  brief): To do / In progress / Done columns over the existing task API, HTML5
+  drag with a custom MIME + dashed landing strip, tap-to-advance status ring as
+  the mandatory touch/keyboard path, per-column add (create-then-PATCH), a
+  poll-guard so refreshes can't yank a mid-drag card, and a container query that
+  goes three-up at ≥720px — `/hubs` now rides the wide 1040px column.
+- **The conversations pass caught real bugs while restyling**: received voice
+  notes rendered their play knob in the *sender's* raw persona gradient (a cyan
+  disc on a one-accent screen — received media controls are now quiet glass;
+  only your own are filled yellow), the composer's send affordance was a
+  permanently-mounted disabled grey disc (now iMessage grammar: mic at rest, a
+  filled yellow send disc only once text exists), and photo avatars were
+  painting over their hairline rims. Mic teardown re-verified behaviorally:
+  one track + one AudioContext while recording, both zero after stop, discard,
+  re-record, and unmount.
+- Hour-14 mid-restyle crash recovery: the host process died with three agents
+  mid-write; work was resumed from disk state (the board's missing `Column`
+  component was the visible casualty — 8 tsc errors from one unwritten symbol).
+- Verification note: post-restyle passes ran against stubbed APIs (no test
+  accounts, per the no-mock-data rule), so the styled connect→celebrate
+  round-trip hasn't re-run against the live server. The pair logic itself is
+  untouched and was verified pre-restyle; first real connect on the deployed
+  build doubles as the confirmation.
 
 ## Next up 🎯
 
 ### P0 — Before demoing
-- [ ] **Verify the live URL actually reflects `main`.** Hours 8–12 (real connections,
-      shared hubs, settings, photos) sat as local-only commits for a while and were
-      only just pushed to `origin/main` — confirm Amplify has picked up the push and
-      rebuilt before trusting the "Live" link below during a demo.
-- [ ] **Register 1–2 more real accounts.** The directory is down to a single real
-      account (the other three rows were leftover test data, deleted this session) —
-      the bubble map needs a crowd for "sized by overlap" to read at all. If the room
-      is still sparse at demo time, set `NEXT_PUBLIC_DEMO_PERSONAS=true` and rebuild.
+- [ ] **The entire Apple redesign (hours 16–18) is uncommitted.** ~33 files in the
+      working tree; the deployed URL still shows the pre-restyle look. Integration
+      gate: `tsc` clean + build passes + a click-through of every screen, then one
+      commit + push (Amplify auto-deploys). Rollback if needed: tag `pre-restyle`.
+- [ ] **Drag a card on the hub board with a real account.** The board compiles and
+      builds but nobody has dragged a card in a browser yet (mock-account testing
+      was stopped by request). Drag between two columns, tap a status ring, confirm
+      both stick after the 6s poll — and that a second member sees the move.
+- [ ] **Verify the live URL reflects `main` after the redesign push** before
+      trusting the "Live" link during a demo.
+- [ ] **Register 1–2 more real accounts.** The directory is down to 13 rows after
+      removing 12 generated test/demo accounts this session — confirm that's still
+      enough of a crowd for "sized by overlap" to read at demo time. If the room is
+      sparse, set `NEXT_PUBLIC_DEMO_PERSONAS=true` and rebuild.
 - [ ] **Walk the full flow on the deployed site**: signup → email code → onboarding →
       bubble map → nudge → voice intro → celebration → DM → hub.
 - [ ] **Pre-grant microphone permission** in the demo browser so no OS prompt appears
@@ -170,9 +244,11 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
       can land in spam. If judges sign up live, this is the riskiest dependency.
 
 ### P1 — Known issues
-- [ ] **Same-browser account switching** briefly shows the previous user's profile
-      (localStorage wins on `savedAt` before cloud reconciles). Fine across devices;
-      avoid demoing two accounts in one window.
+- [ ] **`/reset` still keys its cloud write on the literal `userId: 'me'`**
+      (`app/reset/page.tsx`), which is exactly the pattern `AGENTS.md` warns against —
+      it predates the Cognito-`sub` keying fix and was never updated. Low blast radius
+      today (only the escape hatch uses it), but fix before relying on `/reset` for a
+      real account.
 - [ ] **16 lint problems** (10 errors, 6 warnings) — `react-hooks/refs` writes during
       render in `BubbleField`, `MatchNudge`, `ProfileCard`, plus a few in `settings`
       and `onboarding`. Cosmetic: `tsc` is clean and `next build` passes (Next 16 no
@@ -203,6 +279,15 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
       at you should surface the same way a new message does.
 - [ ] Match nudges are computed client-side on load. Real notifications need a
       server-side job.
+- [ ] **Voice intros are one recording reused for everyone.** Discussed but not yet
+      built: keep the account-level `voiceIntro` as a default (edited from Settings,
+      pre-fills a brand-new connect screen), but snapshot whatever gets sent onto the
+      pair row at send time so "Record again" for one person can personalize their
+      copy without touching the default or anyone else's already-sent version. Also
+      fixes a related race: today, if you re-record your default while a pair is
+      still waiting on the other side, the messages eventually seeded into that
+      thread read whatever your default *currently* is when they finally answer, not
+      what you saw when you sent.
 
 ### P3 — Hardening
 - [ ] **`scripts/provision.mjs` still doesn't create `yellow-hubs`/`yellow-hub-items`.**
@@ -210,8 +295,12 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
       those two tables created manually. (The `photos/*` public-read bucket policy is
       now handled by the script — see `PRIMER.md` AWS gotcha #7 — this item is just
       the two hub tables.)
-- [ ] **Verify JWTs against the pool's JWKS** in `proxy.ts`. It currently checks
-      presence and expiry only, relying on the httpOnly cookie.
+- [ ] **Verify JWTs against the pool's JWKS** in `proxy.ts`. It checks presence and
+      expiry only — and this is now *demonstrated*, not theoretical: during restyle
+      verification an agent minted an unsigned local JWT and walked straight past the
+      wall to screenshot authed pages. Page access is the only exposure (API routes
+      that matter re-derive identity via `getSession()`), but close it before this is
+      public-facing.
 - [ ] Rotate the AWS access key and Cognito client secret (both passed through a
       chat transcript).
 - [ ] Detach `IAMFullAccess` and `AdministratorAccess-Amplify` from the `Yellow` IAM

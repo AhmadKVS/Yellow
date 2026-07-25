@@ -15,6 +15,7 @@ import {
   type VoiceClip,
   type VoiceIntro,
 } from '@/lib/intro';
+import { initialsFor } from '@/lib/initials';
 import { rankMatches } from '@/lib/match';
 import { fetchPair, sendPairIntro, type PairView } from '@/lib/pair';
 import { resolveIdentity } from '@/lib/people';
@@ -52,6 +53,17 @@ function clipKind(clip: VoiceClip): 'text' | 'voice' {
   return clip.text && !clip.s3Key ? 'text' : 'voice';
 }
 
+/**
+ * A profile photo, as a CSS layer rather than an `<img>` — the face is a
+ * decorative disc, and this keeps it one element. Anything that could close
+ * the `url("…")` is rejected instead of escaped.
+ */
+function photoLayer(url: string | undefined): string | null {
+  const clean = url?.trim();
+  if (!clean || !/^https?:\/\/[^"')\s]+$/i.test(clean)) return null;
+  return `url("${clean}") center/cover no-repeat`;
+}
+
 /* ------------------------------------------------------------------ *
  * Styles
  * ------------------------------------------------------------------ */
@@ -60,46 +72,67 @@ function ConnectStyles() {
   return (
     <style href="yellow-connect" precedence="high">{`
 .y-cn-back{
-  display:inline-flex; align-items:center; gap:7px; text-decoration:none;
-  font-size:9.5px; letter-spacing:.16em; text-transform:uppercase;
-  color:rgba(255,248,231,.36); transition:color 180ms linear;
+  display:inline-flex; align-items:center; gap:8px; text-decoration:none;
+  height:28px; font-size:10.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(255,248,231,.4); transition:color 180ms linear;
 }
 .y-cn-back:hover{ color:#FFD60A }
 .y-cn-back:focus-visible{ outline:2px solid #FFD60A; outline-offset:3px; border-radius:4px }
 .y-cn-face{
-  flex:0 0 auto; width:54px; height:54px; border-radius:9999px;
-  display:flex; align-items:center; justify-content:center; font-size:25px;
-  box-shadow:0 10px 26px -12px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.42);
+  flex:0 0 auto; width:54px; height:54px; border-radius:9999px; overflow:hidden;
+  display:flex; align-items:center; justify-content:center; line-height:1;
+  box-shadow:0 10px 26px -14px rgba(0,0,0,.9),
+             inset 0 0 0 1px rgba(255,255,255,.12),
+             inset 0 1px 0 rgba(255,255,255,.38);
+}
+.y-cn-mono{
+  font-weight:600; letter-spacing:.02em; color:#FFF8E7;
+  text-shadow:0 1px 4px rgba(0,0,0,.45);
 }
 .y-cn-name{
-  margin:0; font-size:20px; font-weight:670; letter-spacing:-.026em; line-height:1.14;
+  margin:0; font-size:21px; font-weight:650; letter-spacing:-.022em; line-height:1.16;
   color:#FFF8E7;
 }
 .y-cn-tag{
-  margin:4px 0 0; font-size:13px; line-height:1.38; letter-spacing:-.006em;
-  color:rgba(255,248,231,.5);
+  margin:4px 0 0; font-size:13.5px; line-height:1.4; color:rgba(255,248,231,.62);
 }
+/* Yellow glass, not filled: the Send CTA is the only filled thing here. */
 .y-cn-shared{
-  display:inline-flex; align-items:center; gap:6px; margin-top:9px; height:23px; padding:0 9px;
-  border-radius:8px; font-size:10px; letter-spacing:.13em; text-transform:uppercase;
-  color:#1B1400; background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
-  box-shadow:0 2px 12px -3px rgba(255,195,0,.5), inset 0 1px 0 rgba(255,255,255,.5);
+  display:inline-flex; align-items:center; margin-top:10px; height:24px; padding:0 10px;
+  border-radius:9999px; font-size:10.5px; font-weight:500; letter-spacing:.14em;
+  text-transform:uppercase; color:#FFD60A;
+  background:linear-gradient(0deg, rgba(255,214,10,.14), rgba(255,214,10,.14)),
+             linear-gradient(0deg, rgba(255,255,255,.05), rgba(255,255,255,.05));
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
+  backdrop-filter:blur(18px) saturate(1.6);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);
 }
 
+/* Status card — chrome glass, the screen's instrumentation panel. */
 .y-cn-strip{
-  padding:13px 0 3px; border-top:1px solid rgba(255,214,10,.1);
+  padding:14px 16px; border-radius:18px;
+  background:rgba(20,17,10,.70);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 10px 30px -14px rgba(0,0,0,.6);
+  backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);
+}
+@supports not (backdrop-filter: blur(1px)){
+  .y-cn-shared{ background:rgba(60,48,10,.85) }
+  .y-cn-strip{ background:rgba(16,14,9,.94) }
 }
 .y-cn-strip-eyebrow{
   display:flex; align-items:center; gap:8px;
-  font-size:9.5px; letter-spacing:.19em; text-transform:uppercase; color:#FFD60A;
+  font-size:10.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(255,214,10,.78);
 }
 .y-cn-strip-title{
-  margin:8px 0 0; font-size:17px; font-weight:650; letter-spacing:-.024em; line-height:1.24;
+  margin:9px 0 0; font-size:16.5px; font-weight:600; letter-spacing:-.014em; line-height:1.26;
   color:#FFF8E7;
 }
 .y-cn-strip-sub{
-  margin:6px 0 0; font-size:12.5px; line-height:1.45; letter-spacing:-.004em;
-  color:rgba(255,248,231,.44);
+  margin:6px 0 0; font-size:13.5px; line-height:1.45; color:rgba(255,248,231,.5);
 }
 .y-cn-pulse{
   width:6px; height:6px; border-radius:9999px; background:#FFD60A;
@@ -109,56 +142,65 @@ function ConnectStyles() {
 
 /* The rail: one node per question, split down the middle. Left half fills
    when they answered, right half when you did. Both halves lit = unlocked. */
-.y-cn-step{ position:relative; padding:0 0 24px 34px }
+.y-cn-step{ position:relative; padding:0 0 26px 34px }
 .y-cn-step:last-child{ padding-bottom:6px }
 .y-cn-rail{
-  position:absolute; left:0; top:4px; bottom:0; width:18px;
+  position:absolute; left:0; top:5px; bottom:0; width:16px;
   display:flex; flex-direction:column; align-items:center;
 }
 .y-cn-node{
-  flex:0 0 auto; width:18px; height:18px; border-radius:9999px; display:flex; overflow:hidden;
-  border:1px solid rgba(255,248,231,.17); background:rgba(255,248,231,.03);
-  transition:border-color 500ms ease, box-shadow 500ms ease;
+  flex:0 0 auto; width:16px; height:16px; border-radius:9999px; display:flex; overflow:hidden;
+  background:rgba(255,255,255,.045);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);
+  transition:box-shadow 480ms cubic-bezier(.32,.72,0,1);
 }
-.y-cn-node-done{ border-color:rgba(255,214,10,.65); box-shadow:0 0 15px -2px rgba(255,195,0,.75) }
-.y-cn-half{ flex:1 1 0; background:transparent; transition:background 520ms cubic-bezier(.22,1,.36,1) }
-.y-cn-half-them{ background:linear-gradient(180deg,#FFF0A8,#FFD60A) }
-.y-cn-half-me{ background:linear-gradient(180deg,#FFE45C,#FFC300) }
+.y-cn-node-done{ box-shadow:inset 0 0 0 1px rgba(255,214,10,.45) }
+.y-cn-half{ flex:1 1 0; background:transparent; transition:background 480ms cubic-bezier(.32,.72,0,1) }
+.y-cn-half-them{ background:#FFE45C }
+.y-cn-half-me{ background:#FFC300 }
 .y-cn-line{
-  flex:1 1 auto; width:2px; margin-top:5px; border-radius:2px;
-  background:linear-gradient(180deg, rgba(255,248,231,.13), rgba(255,248,231,.02));
-  transition:background 650ms ease;
+  flex:1 1 auto; width:1px; margin-top:6px;
+  background:rgba(255,255,255,.1);
+  transition:background 560ms cubic-bezier(.32,.72,0,1);
 }
-.y-cn-line-on{ background:linear-gradient(180deg,#FFC300, rgba(255,195,0,.1)) }
+.y-cn-line-on{ background:linear-gradient(180deg, rgba(255,214,10,.55), rgba(255,214,10,.14)) }
 
 .y-cn-q{
-  margin:0 0 11px; font-size:16.5px; font-weight:620; letter-spacing:-.022em;
-  line-height:1.2; color:#FFF8E7;
+  margin:0 0 12px; font-size:16.5px; font-weight:600; letter-spacing:-.014em;
+  line-height:1.24; color:#FFF8E7;
 }
 /* Capped so the notes keep reading as chat bubbles on a wide column. */
 .y-cn-slot{ display:flex; flex-direction:column; gap:14px; max-width:470px }
-.y-cn-enter{ animation:y-cn-enter 540ms cubic-bezier(.2,1.08,.35,1) backwards }
-@keyframes y-cn-enter{ from{ opacity:0; transform:translateY(11px) scale(.975) } }
+.y-cn-enter{ animation:y-cn-enter 420ms cubic-bezier(.32,.72,0,1) backwards }
+@keyframes y-cn-enter{ from{ opacity:0; transform:translateY(10px) } }
 
 .y-cn-typing{
   display:inline-flex; align-items:center; gap:6px; align-self:flex-start;
-  height:36px; padding:0 15px; border-radius:19px 19px 19px 6px;
-  border:1px solid rgba(255,248,231,.08); background:rgba(255,248,231,.035);
+  height:36px; padding:0 15px; border-radius:18px 18px 18px 6px;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08);
+  backdrop-filter:blur(16px) saturate(1.3);
+  -webkit-backdrop-filter:blur(16px) saturate(1.3);
 }
 .y-cn-dot{
-  width:5px; height:5px; border-radius:9999px; background:#FFD60A;
+  width:5px; height:5px; border-radius:9999px; background:rgba(255,248,231,.5);
   animation:y-cn-dot 1.15s ease-in-out infinite;
 }
-@keyframes y-cn-dot{ 0%,100%{ opacity:.2; transform:translateY(0) } 45%{ opacity:1; transform:translateY(-3px) } }
+@keyframes y-cn-dot{ 0%,100%{ opacity:.25; transform:translateY(0) } 45%{ opacity:1; transform:translateY(-3px) } }
 
 .y-cn-empty{
-  margin:0 0 22px; padding:13px 15px; max-width:470px;
-  border-radius:14px; border:1px solid rgba(255,248,231,.08);
-  background:rgba(255,248,231,.028);
+  margin:0 0 22px; padding:14px 16px; max-width:470px;
+  border-radius:18px; border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.06);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter:blur(16px) saturate(1.3);
+  -webkit-backdrop-filter:blur(16px) saturate(1.3);
 }
+@supports not (backdrop-filter: blur(1px)){
+  .y-cn-typing,.y-cn-empty{ background:rgba(38,34,26,.9) }
+}
+.y-cn-empty .y-cn-strip-eyebrow{ color:rgba(255,248,231,.4) }
 .y-cn-empty-line{
-  margin:7px 0 0; font-size:12.5px; line-height:1.5; letter-spacing:-.004em;
-  color:rgba(255,248,231,.5);
+  margin:8px 0 0; font-size:13.5px; line-height:1.5; color:rgba(255,248,231,.5);
 }
 
 /* Sticks to the bottom of whatever column the app frame gives us, and bleeds
@@ -166,53 +208,65 @@ function ConnectStyles() {
    ground while the thread scrolls behind it. */
 .y-cn-foot{
   position:sticky; bottom:0; z-index:2;
-  margin:8px -20px 0; padding:14px 20px calc(16px + env(safe-area-inset-bottom, 0px));
-  border-top:1px solid rgba(255,214,10,.1);
-  background:linear-gradient(180deg, rgba(11,10,8,.72), #0B0A08 52%);
-  backdrop-filter:blur(10px);
-  animation:y-cn-foot 520ms cubic-bezier(.22,1,.36,1) backwards;
+  margin:10px -20px 0; padding:12px 20px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top:1px solid rgba(255,255,255,.08);
+  background:rgba(20,17,10,.70);
+  backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);
+  animation:y-cn-foot 420ms cubic-bezier(.32,.72,0,1) backwards;
+}
+@supports not (backdrop-filter: blur(1px)){
+  .y-cn-foot{ background:rgba(16,14,9,.96) }
 }
 @media (min-width:768px){
   .y-cn-foot{ margin-left:-32px; margin-right:-32px; padding-left:32px; padding-right:32px }
 }
-@keyframes y-cn-foot{ from{ transform:translateY(16px); opacity:0 } }
+@keyframes y-cn-foot{ from{ transform:translateY(14px); opacity:0 } }
 .y-cn-cta{
   display:flex; align-items:center; justify-content:center; gap:9px;
-  width:100%; height:54px; border-radius:16px; border:0; cursor:pointer; text-decoration:none;
-  font-size:16px; font-weight:680; letter-spacing:-.012em; color:#1A1200;
+  width:100%; height:50px; border-radius:9999px; border:0; cursor:pointer; text-decoration:none;
+  font-size:15px; font-weight:600; letter-spacing:-.01em; color:#1A1200;
   background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
-  box-shadow:0 12px 32px -12px rgba(255,195,0,.62), inset 0 1px 0 rgba(255,255,255,.62);
-  transition:transform 260ms cubic-bezier(.22,1,.36,1), filter 180ms linear, box-shadow 260ms ease;
+  box-shadow:0 8px 24px -10px rgba(255,199,0,.55), inset 0 1px 0 rgba(255,255,255,.5);
+  transition:transform 120ms cubic-bezier(.32,.72,0,1), filter 160ms linear;
 }
-.y-cn-cta:hover:not(:disabled){ transform:translateY(-1.5px); filter:brightness(1.05) }
-.y-cn-cta:active:not(:disabled){ transform:translateY(1px) scale(.994) }
-.y-cn-cta:focus-visible{ outline:2px solid #FFF8E7; outline-offset:3px }
+.y-cn-cta:hover:not(:disabled){ filter:brightness(1.04) }
+.y-cn-cta:active:not(:disabled){ transform:scale(.97) }
+.y-cn-cta:focus-visible{ outline:2px solid #FFF8E7; outline-offset:2px }
 .y-cn-cta:disabled{
-  cursor:not-allowed; color:rgba(255,248,231,.34); background:rgba(255,248,231,.05);
-  box-shadow:inset 0 0 0 1px rgba(255,248,231,.08);
+  cursor:not-allowed; color:rgba(255,248,231,.28); background:rgba(255,255,255,.045);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
 }
 /* Not a button: there is nothing left to press until they answer. */
 .y-cn-cta-status{
-  cursor:default; font-weight:640; color:rgba(255,248,231,.42);
-  background:rgba(255,248,231,.05); box-shadow:inset 0 0 0 1px rgba(255,248,231,.08);
+  cursor:default; color:rgba(255,248,231,.4);
+  background:rgba(255,255,255,.045); box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
 }
 .y-cn-count{
   margin:12px 0 0; text-align:center;
-  font-size:9.5px; letter-spacing:.16em; text-transform:uppercase;
+  font-size:10.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
   color:rgba(255,248,231,.3);
 }
 .y-cn-quiet{
-  display:block; width:max-content; margin:12px auto 0; padding:2px 0;
+  display:block; width:max-content; margin:12px auto 0; padding:4px 2px;
   border:0; background:none; cursor:pointer; text-decoration:none;
-  font-size:9.5px; letter-spacing:.16em; text-transform:uppercase;
-  color:rgba(255,248,231,.42); transition:color 180ms linear;
+  font-size:10.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(255,248,231,.4); transition:color 180ms linear;
 }
 .y-cn-quiet:hover{ color:#FFD60A }
 .y-cn-quiet:focus-visible{ outline:2px solid #FFD60A; outline-offset:3px; border-radius:4px }
 .y-cn-quiet:disabled{ opacity:.4; cursor:not-allowed }
+
+.y-cn-glyph{
+  width:46px; height:46px; border-radius:9999px;
+  display:flex; align-items:center; justify-content:center;
+  color:rgba(255,248,231,.55); background:rgba(255,255,255,.05);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);
+}
 @media (prefers-reduced-motion: reduce){
   .y-cn-enter,.y-cn-foot{ animation-duration:1ms }
   .y-cn-pulse,.y-cn-dot{ animation:none }
+  .y-cn-cta,.y-cn-node,.y-cn-half,.y-cn-line{ transition-duration:1ms }
 }
 `}</style>
   );
@@ -258,32 +312,48 @@ function NotFound({ id }: { id: string }) {
       style={{ fontFamily: SANS }}
     >
       <ConnectStyles />
-      <span
-        aria-hidden
-        className="flex h-14 w-14 items-center justify-center rounded-full text-2xl"
+      <span aria-hidden className="y-cn-glyph">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <circle
+            cx="11"
+            cy="11"
+            r="8.2"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            fill="none"
+            opacity=".5"
+          />
+          <path
+            d="M7.4 7.4 14.6 14.6"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </svg>
+      </span>
+      <h1
         style={{
-          background: 'rgba(255,248,231,.05)',
-          boxShadow: 'inset 0 0 0 1px rgba(255,248,231,.1)',
+          margin: '6px 0 0',
+          fontSize: 21,
+          fontWeight: 600,
+          letterSpacing: '-.02em',
         }}
       >
-        🕯️
-      </span>
-      <h1 style={{ margin: 0, fontSize: 21, fontWeight: 660, letterSpacing: '-.026em' }}>
         No one here by that name
       </h1>
       <p
         style={{
           margin: 0,
-          fontSize: 13.5,
+          fontSize: 15,
           lineHeight: 1.5,
-          color: 'rgba(255,248,231,.46)',
+          color: 'rgba(255,248,231,.62)',
           maxWidth: '24em',
         }}
       >
-        <span style={{ fontFamily: MONO }}>/connect/{id}</span> doesn&rsquo;t match anyone on
-        Yellow. Pick someone from your matches instead.
+        <span style={{ fontFamily: MONO, fontSize: 13 }}>/connect/{id}</span>
+        {' doesn’t match anyone on Yellow. Pick someone from your matches instead.'}
       </p>
-      <Link href="/home" className="y-cn-cta" style={{ maxWidth: 220, marginTop: 10 }}>
+      <Link href="/home" className="y-cn-cta" style={{ maxWidth: 220, marginTop: 12 }}>
         Back to matches
       </Link>
     </div>
@@ -569,11 +639,11 @@ function Exchange({ person }: { person: SeedPersona }) {
 
       <header className="pt-[18px]">
         <Link href="/home" className="y-cn-back" style={{ fontFamily: MONO }}>
-          <svg width="13" height="10" viewBox="0 0 13 10" aria-hidden>
+          <svg width="14" height="11" viewBox="0 0 14 11" aria-hidden>
             <path
-              d="M12 5H1M5.4 1 1 5l4.4 4"
+              d="M13 5.5H1.4M6 1 1.4 5.5 6 10"
               stroke="currentColor"
-              strokeWidth="1.6"
+              strokeWidth="1.8"
               strokeLinecap="round"
               strokeLinejoin="round"
               fill="none"
@@ -587,10 +657,23 @@ function Exchange({ person }: { person: SeedPersona }) {
             className="y-cn-face"
             aria-hidden
             style={{
-              backgroundImage: `radial-gradient(circle at 34% 26%, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 48%), linear-gradient(150deg, ${person.gradient[0]}, ${person.gradient[1]})`,
+              background: [
+                photoLayer(person.photoUrl),
+                'radial-gradient(circle at 34% 26%, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 48%)',
+                `linear-gradient(150deg, ${person.gradient[0]}, ${person.gradient[1]})`,
+              ]
+                .filter(Boolean)
+                .join(', '),
             }}
           >
-            {person.emoji}
+            {photoLayer(person.photoUrl) ? null : (
+              <span
+                className="y-cn-mono"
+                style={{ fontSize: initialsFor(person.name).length > 1 ? 17.5 : 22 }}
+              >
+                {initialsFor(person.name)}
+              </span>
+            )}
           </span>
           <div className="min-w-0 flex-1">
             <h1 className="y-cn-name">{person.name}</h1>
@@ -603,7 +686,7 @@ function Exchange({ person }: { person: SeedPersona }) {
           </div>
         </div>
 
-        <div className="y-cn-strip mt-[16px]">
+        <div className="y-cn-strip mt-[18px]">
           {alreadyConnected ? (
             <>
               <span className="y-cn-strip-eyebrow" style={{ fontFamily: MONO }}>
@@ -643,18 +726,12 @@ function Exchange({ person }: { person: SeedPersona }) {
             <span className="y-cn-strip-eyebrow" style={{ fontFamily: MONO }}>
               Nothing yet
             </span>
+            {/* One string, not a fragment: JSX drops the space between an
+                expression and text that wraps onto the next line. */}
             <p className="y-cn-empty-line">
-              {waiting ? (
-                <>
-                  {firstName} hasn&rsquo;t recorded their intro yet. Yours is waiting for
-                  them.
-                </>
-              ) : (
-                <>
-                  {firstName} hasn&rsquo;t recorded their intro yet. Send yours and
-                  they&rsquo;ll get it the moment they do.
-                </>
-              )}
+              {waiting
+                ? `${firstName} hasn’t recorded their intro yet. Yours is waiting for them.`
+                : `${firstName} hasn’t recorded their intro yet. Send yours and they’ll get it the moment they do.`}
             </p>
           </div>
         ) : null}
@@ -694,7 +771,6 @@ function Exchange({ person }: { person: SeedPersona }) {
                     durationSec={theirClip.durationSec}
                     waveSeed={theirClip.waveSeed}
                     audioUrl={theirUrls[question.key] ?? null}
-                    accent={person.gradient}
                     label={`${firstName}’s answer`}
                   />
                 ) : !theirIntroLoaded ? (

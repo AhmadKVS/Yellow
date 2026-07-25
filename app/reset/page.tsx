@@ -63,8 +63,12 @@ export default function ResetPage() {
   }, [router]);
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-      <p className="text-sm text-muted-gold">Resetting…</p>
+    <div className="flex min-h-dvh flex-1 flex-col items-center justify-center gap-5 text-center">
+      <span
+        aria-hidden="true"
+        className="h-3 w-3 animate-breathe rounded-full bg-yellow shadow-glow"
+      />
+      <p className="text-[13.5px] tracking-[-0.006em] text-[rgba(255,248,231,0.5)]">Resetting…</p>
     </div>
   );
 }

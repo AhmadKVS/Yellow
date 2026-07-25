@@ -27,6 +27,8 @@ const SUGGESTION_COUNT = 6;
    the DOM node is kept alive exactly long enough to play the collapse. */
 const REMOVE_MS = 190;
 const NOTICE_MS = 2600;
+/** Entrances stagger over the first row only, per the motion spec. */
+const STAGGER_LIMIT = 6;
 
 export interface TagGroups {
   softSkills: string[];
@@ -72,25 +74,30 @@ function TagEditorStyles() {
 .yt-group{display:flex;flex-direction:column}
 .yt-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .yt-label{
-  font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#B8860B;
+  margin:0;font-size:10.5px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;color:#B8860B;
 }
 .yt-count{
-  font-size:10px;letter-spacing:.12em;color:rgba(184,134,11,.7);
-  font-variant-numeric:tabular-nums;
+  font-size:10.5px;font-weight:500;letter-spacing:.12em;
+  color:rgba(255,248,231,.40);font-variant-numeric:tabular-nums;
 }
-.yt-rule{height:1px;background:linear-gradient(90deg,rgba(184,134,11,.42),rgba(184,134,11,0));margin:8px 0 12px}
+.yt-rule{height:1px;background:rgba(255,255,255,.08);margin:10px 0 14px}
 
-.yt-chips{display:flex;flex-wrap:wrap;gap:7px;align-items:flex-start;list-style:none;margin:0;padding:0}
+.yt-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;list-style:none;margin:0;padding:0}
 
+/* Kept tags are yellow glass: a yellow tint over a white base, blurred,
+   with a hairline and a top light. Filled yellow stays with the CTA. */
 .yt-chip{
   display:inline-flex;align-items:center;overflow:hidden;
-  height:31px;max-width:300px;padding-left:12px;border-radius:999px;
-  background:#FFD60A;color:#0B0A08;
-  font-size:13px;font-weight:600;letter-spacing:-.012em;white-space:nowrap;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.42), 0 2px 12px rgba(255,214,10,.16);
+  height:44px;max-width:320px;padding-left:16px;border-radius:999px;
+  background:linear-gradient(180deg,rgba(255,214,10,.16),rgba(255,214,10,.12)),rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.22);
+  color:#FFD60A;
+  font-size:13.5px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;
   /* 'backwards', not 'both' — once the entrance has played the chip must
      hand opacity/transform back so the removal transition can win. */
-  animation:yt-pop 320ms cubic-bezier(.22,1,.36,1) backwards;
+  animation:yt-pop 320ms cubic-bezier(.32,.72,0,1) backwards;
   animation-delay:var(--yt-d,0ms);
   transition:max-width ${REMOVE_MS}ms cubic-bezier(.4,0,1,1),
              opacity ${REMOVE_MS}ms ease,
@@ -99,68 +106,92 @@ function TagEditorStyles() {
              margin ${REMOVE_MS}ms cubic-bezier(.4,0,1,1);
 }
 .yt-chip[data-leaving="true"]{
-  max-width:0;padding-left:0;opacity:0;transform:scale(.7);margin-right:-7px;
+  max-width:0;padding-left:0;opacity:0;transform:scale(.7);margin-right:-8px;
 }
+/* Full 44×44 target. The chip clips overflow for the collapse, so the
+   focus ring is inset rather than offset — an outside ring would be cut. */
 .yt-x{
   display:flex;align-items:center;justify-content:center;
-  width:26px;height:31px;margin-left:1px;border:0;background:transparent;
-  color:rgba(11,10,8,.5);cursor:pointer;flex:none;
-  transition:color 160ms ease, transform 160ms ease;
+  width:44px;height:44px;padding:0;border:0;background:transparent;
+  color:rgba(255,214,10,.55);cursor:pointer;flex:none;
+  transition:color 160ms ease, transform 120ms cubic-bezier(.32,.72,0,1);
   -webkit-tap-highlight-color:transparent;
 }
-.yt-x:hover{color:#0B0A08;transform:scale(1.18)}
-.yt-x:focus-visible{outline:2px solid #0B0A08;outline-offset:-3px;border-radius:999px;color:#0B0A08}
+.yt-x:hover{color:#FFD60A}
+.yt-x:active{transform:scale(.88)}
+.yt-x:focus-visible{outline:2px solid #FFD60A;outline-offset:-4px;border-radius:999px;color:#FFD60A}
 
 .yt-empty{
-  font-size:12.5px;color:rgba(255,248,231,.34);padding:5px 0 1px;
+  margin:0;font-size:12.5px;color:rgba(255,248,231,.40);padding:2px 0;
 }
 
 .yt-addrow{display:flex;align-items:center;gap:8px;margin-top:12px}
 .yt-input{
-  flex:1;min-width:0;height:34px;padding:0 12px;
-  background:rgba(255,248,231,.045);
-  border:1px solid rgba(184,134,11,.3);border-radius:999px;
-  color:#FFF8E7;font-size:13.5px;letter-spacing:-.01em;
-  transition:border-color 200ms ease, background 200ms ease;
+  flex:1;min-width:0;height:44px;padding:0 16px;
+  background:rgba(255,255,255,.045);border:0;border-radius:14px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),inset 0 1px 0 rgba(255,255,255,.05);
+  color:#FFF8E7;font-size:15px;letter-spacing:-.01em;
+  transition:background 200ms cubic-bezier(.32,.72,0,1),
+             box-shadow 200ms cubic-bezier(.32,.72,0,1);
 }
-.yt-input::placeholder{color:rgba(255,248,231,.3)}
-.yt-input:focus{outline:none;border-color:rgba(255,214,10,.75);background:rgba(255,214,10,.05)}
+.yt-input::placeholder{color:rgba(255,248,231,.26)}
+.yt-input:focus{
+  outline:none;background:rgba(255,214,10,.07);
+  box-shadow:inset 0 0 0 1px rgba(255,214,10,.42),inset 0 1px 0 rgba(255,255,255,.05);
+}
 .yt-add{
-  flex:none;width:34px;height:34px;border-radius:999px;
-  border:1px solid rgba(184,134,11,.4);background:transparent;color:#FFD60A;
-  font-size:17px;line-height:1;cursor:pointer;
+  flex:none;width:44px;height:44px;border-radius:999px;border:0;
+  background:linear-gradient(180deg,rgba(255,214,10,.16),rgba(255,214,10,.12)),rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.22);
+  color:#FFD60A;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
-  transition:background 180ms ease, border-color 180ms ease, transform 180ms ease;
+  transition:background 180ms ease,box-shadow 180ms ease,
+             transform 120ms cubic-bezier(.32,.72,0,1),opacity 180ms ease;
   -webkit-tap-highlight-color:transparent;
 }
-.yt-add:hover:not(:disabled){background:rgba(255,214,10,.13);border-color:rgba(255,214,10,.7)}
+.yt-add:hover:not(:disabled){
+  background:linear-gradient(180deg,rgba(255,214,10,.24),rgba(255,214,10,.18)),rgba(255,255,255,.07);
+}
 .yt-add:active:not(:disabled){transform:scale(.9)}
-.yt-add:disabled{opacity:.32;cursor:default}
+.yt-add:disabled{
+  background:rgba(255,255,255,.045);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+  color:rgba(255,248,231,.26);cursor:default;
+}
 .yt-add:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
 
 .yt-sugtitle{
-  font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;
-  color:rgba(184,134,11,.8);margin:13px 0 7px;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(184,134,11,.85);margin:16px 0 8px;
 }
-.yt-sugs{display:flex;flex-wrap:wrap;gap:6px}
+.yt-sugs{display:flex;flex-wrap:wrap;gap:8px}
+/* Cold state of the same grammar: quiet outline, no fill. ::after lifts
+   the 40px pill to a 44px target without loosening the row rhythm. */
 .yt-sug{
-  height:28px;padding:0 12px;border-radius:999px;cursor:pointer;
-  border:1px dashed rgba(184,134,11,.55);background:transparent;
-  color:rgba(255,248,231,.78);font-size:12.5px;font-weight:500;letter-spacing:-.008em;
+  position:relative;display:inline-flex;align-items:center;
+  height:40px;padding:0 15px;border-radius:999px;cursor:pointer;
+  border:0;background:transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.10);
+  color:rgba(255,248,231,.62);font-size:13px;font-weight:500;letter-spacing:-.008em;
   white-space:nowrap;
-  animation:yt-pop 260ms cubic-bezier(.22,1,.36,1) backwards;
-  transition:background 170ms ease,border-color 170ms ease,color 170ms ease,transform 170ms ease;
+  animation:yt-pop 260ms cubic-bezier(.32,.72,0,1) backwards;
+  transition:background 170ms ease,box-shadow 170ms ease,color 170ms ease,
+             transform 120ms cubic-bezier(.32,.72,0,1);
   -webkit-tap-highlight-color:transparent;
 }
+.yt-sug::after{content:'';position:absolute;inset:-2px 0}
+/* Hover previews the material the chip will get once it's kept. */
 .yt-sug:hover{
-  background:rgba(255,214,10,.12);border-color:rgba(255,214,10,.85);
-  color:#FFD60A;border-style:solid;
+  background:linear-gradient(180deg,rgba(255,214,10,.16),rgba(255,214,10,.12)),rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.22);
+  color:#FFD60A;
 }
-.yt-sug:active{transform:scale(.93)}
+.yt-sug:active{transform:scale(.97)}
 .yt-sug:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
 
 .yt-notice{
-  font-size:12px;color:#FFC300;margin-top:9px;min-height:1em;
+  font-size:12.5px;line-height:1.4;color:rgba(255,214,10,.9);margin:10px 0 0;min-height:1em;
   animation:yt-fade 240ms ease backwards;
 }
 
@@ -170,10 +201,17 @@ function TagEditorStyles() {
 }
 @keyframes yt-fade{from{opacity:0}to{opacity:1}}
 
+/* No backdrop-filter (older Firefox): raise the fill so nothing turns
+   into see-through soup. */
+@supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+  .yt-chip,.yt-add,.yt-sug:hover{background:rgba(60,48,10,.85)}
+  .yt-add:hover:not(:disabled){background:rgba(76,61,14,.9)}
+}
+
 @media (prefers-reduced-motion: reduce){
   .yt-chip,.yt-sug,.yt-notice{animation-duration:1ms;animation-delay:0ms}
   .yt-chip{transition-duration:1ms}
-  .yt-x:hover,.yt-add:active,.yt-sug:active{transform:none}
+  .yt-x:active,.yt-add:active:not(:disabled),.yt-sug:active{transform:none}
 }
 `}</style>
   );
@@ -310,7 +348,10 @@ function TagGroup({
             key={tag}
             className="yt-chip"
             data-leaving={leaving.includes(tag)}
-            style={{ ['--yt-d' as string]: stagger ? `${index * 45}ms` : '0ms' }}
+            style={{
+              ['--yt-d' as string]:
+                stagger && index < STAGGER_LIMIT ? `${index * 45}ms` : '0ms',
+            }}
           >
             {tag}
             <button
@@ -320,16 +361,16 @@ function TagGroup({
               onClick={() => removeTag(tag)}
             >
               <svg
-                width="11"
-                height="11"
-                viewBox="0 0 11 11"
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
                 fill="none"
                 aria-hidden="true"
               >
                 <path
-                  d="M1.5 1.5 L9.5 9.5 M9.5 1.5 L1.5 9.5"
+                  d="M1.9 1.9 10.1 10.1 M10.1 1.9 1.9 10.1"
                   stroke="currentColor"
-                  strokeWidth="1.7"
+                  strokeWidth="1.8"
                   strokeLinecap="round"
                 />
               </svg>
@@ -368,7 +409,20 @@ function TagGroup({
           aria-label={`Add ${label.toLowerCase()} tag`}
           onClick={() => addTag(draft)}
         >
-          +
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 18 18"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M9 3.4v11.2M3.4 9h11.2"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+          </svg>
         </button>
       </div>
 
@@ -431,7 +485,7 @@ export default function TagEditor({
   const max = Math.max(1, maxPerGroup);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 30 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
       <TagEditorStyles />
 
       <TagGroup

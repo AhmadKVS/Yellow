@@ -87,16 +87,19 @@ export default function HomePage() {
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden">
       <header className="shrink-0 px-6 pb-1 pt-6 md:px-10 md:pt-9">
-        <h1 className="text-[22px] font-semibold tracking-tight text-[#FFF8E7] md:text-[27px]">
+        <h1 className="text-[30px] font-bold leading-[1.12] tracking-[-0.03em] text-[#FFF8E7]">
           Your orbit
         </h1>
-        <p className="mt-1 max-w-[52ch] text-[13px] leading-relaxed text-[#FFF8E7]/40 md:text-[14px]">
+        <p
+          className="mt-1.5 max-w-[52ch] text-[13.5px] leading-[1.45]"
+          style={{ color: 'rgba(255,248,231,.62)' }}
+        >
           {matches.length} {matches.length === 1 ? 'builder' : 'builders'}, sized by what
           you actually share.
           {topMatch && topOverlap > 0 ? (
             <>
               {' '}
-              Closest is <span className="text-[#FFD60A]/85">{topMatch.person.name}</span>,
+              Closest is <span style={{ color: '#FFD60A' }}>{topMatch.person.name}</span>,
               overlapping on {topOverlap}.
             </>
           ) : null}
@@ -113,21 +116,23 @@ export default function HomePage() {
           className="absolute inset-0"
         />
         <LiveBadge live={peopleSource === 'dynamodb'} />
-      </div>
 
-      {nudgeVisible && topIsStranger && !state.nudgeDismissed && (
-        <MatchNudge
-          match={topMatch}
-          onConnect={(person) => {
-            setNudgeVisible(false);
-            openConnection(person);
-          }}
-          onDismiss={() => {
-            setNudgeVisible(false);
-            dismissNudge();
-          }}
-        />
-      )}
+        {/* Inside the field, so the banner drops over the map rather than
+            across the title. */}
+        {nudgeVisible && topIsStranger && !state.nudgeDismissed && (
+          <MatchNudge
+            match={topMatch}
+            onConnect={(person) => {
+              setNudgeVisible(false);
+              openConnection(person);
+            }}
+            onDismiss={() => {
+              setNudgeVisible(false);
+              dismissNudge();
+            }}
+          />
+        )}
+      </div>
 
       <ProfileCard
         match={selected}
@@ -149,27 +154,38 @@ function LiveBadge({ live }: { live: boolean }) {
   if (!live) return null;
   return (
     <span
-      className="pointer-events-none absolute left-4 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
+      className="pointer-events-none absolute left-4 top-3 inline-flex items-center gap-[7px] rounded-full px-2.5"
       style={{
+        height: 26,
         fontFamily: MONO,
-        fontSize: 9,
-        letterSpacing: '0.16em',
+        fontSize: 10.5,
+        fontWeight: 500,
+        letterSpacing: '0.14em',
         textTransform: 'uppercase',
-        color: 'rgba(255,214,10,.66)',
-        background: 'rgba(20,17,10,.6)',
-        border: '1px solid rgba(255,214,10,.16)',
-        backdropFilter: 'blur(8px)',
+        color: 'rgba(255,248,231,.62)',
+        background: 'rgba(20,17,10,.72)',
+        border: '1px solid rgba(255,255,255,.14)',
+        backdropFilter: 'blur(20px) saturate(1.4)',
+        WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
       }}
     >
+      <style href="yellow-home" precedence="high">{`
+@keyframes y-livedot{
+  0%,100%{ opacity:.4; transform:scale(.82) }
+  50%    { opacity:1;  transform:scale(1) }
+}
+.y-livedot{ animation:y-livedot 2.6s cubic-bezier(.45,0,.55,1) infinite }
+@media (prefers-reduced-motion: reduce){ .y-livedot{ animation:none; opacity:.9 } }
+`}</style>
       <span
         aria-hidden
-        className="animate-pulse"
+        className="y-livedot"
         style={{
           width: 5,
           height: 5,
           borderRadius: 9999,
           background: '#FFD60A',
-          boxShadow: '0 0 8px rgba(255,214,10,.9)',
+          boxShadow: '0 0 6px rgba(255,214,10,.85)',
         }}
       />
       Live
@@ -214,55 +230,69 @@ function FirstOne({ me, live }: { me: Profile; live: boolean }) {
     <div className="relative flex flex-1 flex-col overflow-hidden">
       <style href="yellow-first" precedence="high">{`
 @keyframes y-fo-breathe{
-  0%,100%{ transform:scale(1); opacity:.7 }
-  50%    { transform:scale(1.09); opacity:1 }
+  0%,100%{ transform:scale(1); opacity:.58 }
+  50%    { transform:scale(1.06); opacity:.95 }
 }
 @keyframes y-fo-ring{
-  0%   { transform:scale(.9); opacity:.55 }
-  100% { transform:scale(1.55); opacity:0 }
+  0%   { transform:scale(.92); opacity:.45 }
+  100% { transform:scale(1.5); opacity:0 }
 }
 @keyframes y-fo-rise{
   from{ opacity:0; transform:translateY(10px) }
 }
 .y-fo-halo{ animation:y-fo-breathe 6.4s cubic-bezier(.45,0,.55,1) infinite }
-.y-fo-pulse{ animation:y-fo-ring 4.2s cubic-bezier(.22,1,.36,1) infinite }
-.y-fo-rise{ animation:y-fo-rise 620ms cubic-bezier(.22,1,.36,1) backwards }
+.y-fo-pulse{ animation:y-fo-ring 4.2s cubic-bezier(.32,.72,0,1) infinite }
+.y-fo-rise{ animation:y-fo-rise 380ms cubic-bezier(.32,.72,0,1) backwards }
 .y-fo-cta{
   display:inline-flex; align-items:center; justify-content:center; gap:8px;
-  height:52px; padding:0 26px; border-radius:16px; border:0; cursor:pointer;
-  font-size:15.5px; font-weight:670; letter-spacing:-.012em; color:#1A1200;
+  height:50px; padding:0 28px; border-radius:9999px; border:0; cursor:pointer;
+  font-size:15px; font-weight:600; letter-spacing:-.01em; color:#1A1200;
   background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
-  box-shadow:0 12px 32px -12px rgba(255,195,0,.62), inset 0 1px 0 rgba(255,255,255,.62);
-  transition:transform 260ms cubic-bezier(.22,1,.36,1), filter 180ms linear;
+  box-shadow:0 8px 24px -10px rgba(255,199,0,.55);
+  transition:transform 120ms cubic-bezier(.32,.72,0,1), filter 120ms linear;
 }
-.y-fo-cta:hover{ transform:translateY(-1.5px); filter:brightness(1.05) }
-.y-fo-cta:active{ transform:translateY(1px) scale(.994) }
-.y-fo-cta:focus-visible{ outline:2px solid #FFF8E7; outline-offset:3px }
-.y-fo-ghost{
+.y-fo-cta:hover{ filter:brightness(1.04) }
+.y-fo-cta:active{ transform:scale(.97) }
+.y-fo-cta:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
+.y-fo-plain{
   display:inline-flex; align-items:center; justify-content:center;
-  height:44px; padding:0 18px; border-radius:14px; cursor:pointer;
-  font-size:13.5px; font-weight:600; letter-spacing:-.008em;
-  color:rgba(255,248,231,.6); background:transparent;
-  border:1px solid rgba(255,248,231,.12);
-  transition:color 200ms linear, border-color 200ms linear;
+  height:44px; padding:0 14px; border-radius:9999px; border:0; cursor:pointer;
+  font-size:15px; font-weight:500; letter-spacing:-.01em;
+  color:rgba(255,248,231,.62); background:transparent;
+  transition:color 160ms linear;
 }
-.y-fo-ghost:hover{ color:#FFF8E7; border-color:rgba(255,214,10,.38) }
-.y-fo-ghost:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
+.y-fo-plain:hover{ color:#FFD60A }
+.y-fo-plain:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
+/* same graph paper the populated orbit sits on, so the empty room is
+   recognisably the same room */
+.y-fo-grid{
+  position:absolute; inset:0; pointer-events:none;
+  background-position:50% 50%; background-repeat:repeat;
+  background-size:224px 224px, 224px 224px, 56px 56px, 56px 56px;
+  background-image:
+    linear-gradient(to right, rgba(255,214,10,.22) 0 2px, transparent 2px),
+    linear-gradient(to bottom, rgba(255,214,10,.22) 0 2px, transparent 2px),
+    linear-gradient(to right, rgba(255,248,231,.125) 0 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,248,231,.125) 0 1px, transparent 1px);
+  -webkit-mask-image:radial-gradient(ellipse 46% 52% at 50% 44%,
+    #000 0%, #000 52%, rgba(0,0,0,0) 100%);
+  mask-image:radial-gradient(ellipse 46% 52% at 50% 44%,
+    #000 0%, #000 52%, rgba(0,0,0,0) 100%);
+}
 @media (prefers-reduced-motion: reduce){
   .y-fo-halo,.y-fo-pulse{ animation:none }
   .y-fo-rise{ animation-duration:1ms }
+  .y-fo-cta{ transition-duration:1ms }
 }
 `}</style>
 
+      <div aria-hidden className="y-fo-grid" />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{
-          backgroundImage: [
-            'radial-gradient(42% 30% at 84% 12%, rgba(255,214,10,.07) 0%, rgba(255,214,10,0) 72%)',
-            'radial-gradient(46% 34% at 12% 88%, rgba(184,134,11,.085) 0%, rgba(184,134,11,0) 74%)',
-            'radial-gradient(58% 40% at 50% 42%, rgba(255,201,10,.14) 0%, rgba(255,150,0,0) 72%)',
-          ].join(','),
+          backgroundImage:
+            'radial-gradient(62% 48% at 50% 42%, rgba(255,201,10,.1) 0%, rgba(255,150,0,0) 78%)',
         }}
       />
 
@@ -275,38 +305,29 @@ function FirstOne({ me, live }: { me: Profile; live: boolean }) {
             aria-hidden
             className="y-fo-halo pointer-events-none absolute rounded-full"
             style={{
-              width: 232,
-              height: 232,
+              width: 224,
+              height: 224,
               background:
-                'radial-gradient(circle, rgba(255,214,10,.22) 0%, rgba(255,178,0,.08) 46%, rgba(255,178,0,0) 72%)',
+                'radial-gradient(circle, rgba(255,214,10,.20) 0%, rgba(255,178,0,.07) 46%, rgba(255,178,0,0) 72%)',
             }}
           />
           <span
             aria-hidden
             className="y-fo-pulse pointer-events-none absolute rounded-full"
-            style={{ width: 168, height: 168, border: '1px solid rgba(255,214,10,.3)' }}
-          />
-          <span
-            aria-hidden
-            className="y-fo-pulse pointer-events-none absolute rounded-full"
-            style={{
-              width: 168,
-              height: 168,
-              border: '1px solid rgba(255,214,10,.22)',
-              animationDelay: '2.1s',
-            }}
+            style={{ width: 164, height: 164, border: '1px solid rgba(255,214,10,.24)' }}
           />
           <Bubble profile={me} size={132} prominence={1} variant="me" interactive={false} />
         </div>
 
-        <p className="y-fo-rise" style={{ animationDelay: '60ms' }}>
+        <p className="y-fo-rise" style={{ animationDelay: '40ms' }}>
           <span
             style={{
               fontFamily: MONO,
-              fontSize: 9.5,
-              letterSpacing: '0.19em',
+              fontSize: 10.5,
+              fontWeight: 500,
+              letterSpacing: '0.14em',
               textTransform: 'uppercase',
-              color: 'rgba(255,214,10,.7)',
+              color: 'rgba(255,248,231,.40)',
             }}
           >
             Your orbit
@@ -314,23 +335,27 @@ function FirstOne({ me, live }: { me: Profile; live: boolean }) {
         </p>
 
         <h1
-          className="y-fo-rise mt-3 text-[26px] font-semibold leading-[1.2] tracking-[-0.03em] text-[#FFF8E7] md:text-[29px]"
-          style={{ maxWidth: '15ch', animationDelay: '120ms' }}
+          className="y-fo-rise mt-3 text-[30px] font-bold leading-[1.12] tracking-[-0.03em] text-[#FFF8E7]"
+          style={{ maxWidth: '15ch', animationDelay: '90ms' }}
         >
           You&rsquo;re the first one here.
         </h1>
 
         <p
-          className="y-fo-rise mt-3 text-[14px] leading-[1.55] text-[#FFF8E7]/45"
-          style={{ maxWidth: '34ch', animationDelay: '180ms' }}
+          className="y-fo-rise mt-3.5 text-[15px] leading-[1.5]"
+          style={{
+            maxWidth: '34ch',
+            color: 'rgba(255,248,231,.62)',
+            animationDelay: '140ms',
+          }}
         >
           Yellow matches on how you work, not where you worked. As people join,
           they&rsquo;ll appear around you — closer and bigger the more you actually share.
         </p>
 
         <div
-          className="y-fo-rise mt-8 flex flex-col items-center gap-3"
-          style={{ animationDelay: '240ms' }}
+          className="y-fo-rise mt-8 flex flex-col items-center gap-1.5"
+          style={{ animationDelay: '190ms' }}
         >
           <button type="button" className="y-fo-cta" onClick={invite}>
             {copied ? 'Link copied' : 'Invite someone'}
@@ -339,7 +364,7 @@ function FirstOne({ me, live }: { me: Profile; live: boolean }) {
                 <path
                   d="M1 6h12M8.6 1.4 13.2 6l-4.6 4.6"
                   stroke="currentColor"
-                  strokeWidth="1.9"
+                  strokeWidth="1.8"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   fill="none"
@@ -350,7 +375,7 @@ function FirstOne({ me, live }: { me: Profile; live: boolean }) {
 
           <button
             type="button"
-            className="y-fo-ghost"
+            className="y-fo-plain"
             onClick={() => router.push('/settings')}
           >
             Edit your tags
@@ -358,8 +383,12 @@ function FirstOne({ me, live }: { me: Profile; live: boolean }) {
         </div>
 
         <p
-          className="y-fo-rise mt-7 text-[11.5px] leading-relaxed text-[#FFF8E7]/26"
-          style={{ maxWidth: '32ch', animationDelay: '300ms' }}
+          className="y-fo-rise mt-6 text-[12.5px] leading-[1.45]"
+          style={{
+            maxWidth: '32ch',
+            color: 'rgba(255,248,231,.40)',
+            animationDelay: '240ms',
+          }}
         >
           The orbit refreshes on its own — anyone who signs up shows up here.
         </p>

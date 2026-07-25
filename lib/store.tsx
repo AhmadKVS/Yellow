@@ -91,9 +91,12 @@ export type LocalAppState = Omit<AppState, 'hubs'>;
 /**
  * What actually lands in localStorage / DynamoDB. `savedAt` is how we decide
  * whether the cloud copy is newer than the local one. `hydrated` is never
- * meaningful on disk — it is forced on load.
+ * meaningful on disk — it is forced on load. `owner` is whose id wrote this
+ * blob — optional so old blobs written before this field existed still
+ * hydrate — and is what lets a fresh sign-in tell "my own cache" apart from
+ * "the previous account's cache in this same browser."
  */
-type PersistedState = LocalAppState & { savedAt: number };
+type PersistedState = LocalAppState & { savedAt: number; owner?: string };
 
 interface StoreState {
   app: LocalAppState;
@@ -412,6 +415,9 @@ interface Hydrated {
   savedAt: number;
   /** Anything the old blob still holds, handed to the one-shot migration. */
   legacyHubs: Hub[];
+  /** Whose id wrote this blob. `undefined` for blobs from before this field
+   *  existed — treated as "no conflict signal" rather than a mismatch. */
+  owner?: string;
 }
 
 /** Fills in anything an older/partial blob is missing. */
@@ -426,6 +432,7 @@ function normalize(value: PersistedState): Hydrated {
     },
     savedAt: typeof value.savedAt === 'number' ? value.savedAt : 0,
     legacyHubs: legacyHubsOf(value),
+    owner: typeof value.owner === 'string' ? value.owner : undefined,
   };
 }
 
@@ -479,8 +486,8 @@ async function readCloud(
  * The blob is built from `LocalAppState` alone, which has no `hubs` field —
  * so a hub structurally cannot be written to localStorage or the state row.
  */
-function toBlob(app: LocalAppState, savedAt: number): PersistedState {
-  return { ...app, hydrated: false, savedAt };
+function toBlob(app: LocalAppState, savedAt: number, owner: string): PersistedState {
+  return { ...app, hydrated: false, savedAt, owner };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -665,10 +672,12 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
 
     // 1. Local first, dispatched synchronously so the UI paints with no flash.
     let localSavedAt = -1;
+    let localOwner: string | undefined;
     try {
       const local = readLocal();
       if (local) {
         localSavedAt = local.savedAt;
+        localOwner = local.owner;
         rememberLegacyHubs(local.legacyHubs);
         dispatch({ type: 'HYDRATE', state: local.app, savedAt: local.savedAt });
       }
@@ -683,6 +692,21 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       try {
         const id = await resolveIdentity();
         if (id) adoptIdentity(id);
+
+        // The blob painted in step 1 was whatever this browser had cached
+        // *before* we knew who "we" are this time — which, on a device that
+        // signed in as someone else earlier, is that other account's profile
+        // and connections. A brand-new account has no cloud row yet to ever
+        // correct this (the check below never overwrites when `cloud` is
+        // null), so left alone it would show a fresh sign-up someone else's
+        // profile and skip onboarding forever. Discard it outright instead of
+        // presenting it as this account's truth.
+        if (localOwner && id && localOwner !== id) {
+          clearLocal();
+          localSavedAt = -1;
+          dispatch({ type: 'HYDRATE', state: EMPTY_APP_STATE, savedAt: 0 });
+        }
+
         const cloud = await readCloud(id || resolveDirectoryId(), controller.signal);
         if (mountedRef.current && cloud) {
           // Legacy hubs are worth keeping even from a row we're about to
@@ -1045,7 +1069,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
     // writing. This is what stops a failed hydration from wiping DynamoDB.
     if (store.revision === 0) return;
 
-    const blob = toBlob(store.app, store.savedAt);
+    const blob = toBlob(store.app, store.savedAt, currentUserId());
     writeLocal(blob);
 
     // Supersede any in-flight debounce with the newer snapshot.
@@ -1055,7 +1079,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       debounceRef.current = null;
       pushCloud(blob);
     }, CLOUD_DEBOUNCE_MS);
-  }, [store, pushCloud]);
+  }, [store, pushCloud, currentUserId]);
 
   // Flush a pending write on unmount so a fast navigate-away still syncs.
   useEffect(
@@ -1233,9 +1257,9 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
     // people are working in.
     seenDispatch({ type: 'CLEAR' });
     // Stamp "now" so this empty state beats any stale DynamoDB row on reload.
-    pushCloud(toBlob(EMPTY_APP_STATE, Date.now()));
+    pushCloud(toBlob(EMPTY_APP_STATE, Date.now(), currentUserId()));
     dispatch({ type: 'RESET' });
-  }, [pushCloud]);
+  }, [pushCloud, currentUserId]);
 
   /**
    * Last line of defence against seeing yourself in your own orbit. The route

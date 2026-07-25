@@ -9,7 +9,6 @@ import {
   type FormEvent,
 } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 
 /* ------------------------------------------------------------------ */
 /* Type stacks — pinned so the column never falls back to a system face. */
@@ -71,6 +70,30 @@ function destination(): string {
   return '/';
 }
 
+/** Chrome glyph, per the design language: inline SVG, stroke 1.8, round caps. */
+function EyeGlyph({ crossed }: { crossed: boolean }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M1.9 10S5 4.9 10 4.9 18.1 10 18.1 10 15 15.1 10 15.1 1.9 10 1.9 10Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="10" cy="10" r="2.35" stroke="currentColor" strokeWidth="1.8" />
+      {crossed ? (
+        <path
+          d="M3.7 3.7 16.3 16.3"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      ) : null}
+    </svg>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Scoped stylesheet — shared verbatim with app/signup/page.tsx so that  */
 /* React's dedupe-by-href can only ever pick identical rules.           */
@@ -83,25 +106,22 @@ function AuthStyles() {
    (max-w-[560px] + px-5/md:px-8), so these screens add no side padding. */
 .ya-root{display:flex;flex-direction:column;min-height:100dvh;position:relative}
 
-/* --- rail ------------------------------------------------------- */
+/* --- rail: quiet mono instrumentation, no glow -------------------- */
 .ya-rail{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
-  padding:18px 0 16px;flex:none;
+  padding:20px 0 14px;flex:none;
 }
-.ya-mark{display:flex;align-items:center;gap:7px}
-.ya-dot{
-  width:9px;height:9px;border-radius:999px;background:#FFD60A;
-  box-shadow:0 0 12px rgba(255,214,10,.85);
-}
-.ya-wordmark{font-size:13.5px;font-weight:600;letter-spacing:-.02em;color:#FFF8E7}
-.ya-steps{display:flex;align-items:center;gap:7px}
+.ya-mark{display:flex;align-items:center;gap:8px}
+.ya-dot{width:20px;height:20px;border-radius:999px;flex:none;box-shadow:0 0 10px 1px rgba(255,214,10,.35)}
+.ya-wordmark{font-size:15px;font-weight:600;letter-spacing:-.02em;color:#FFF8E7}
+.ya-steps{display:flex;align-items:center;gap:8px}
 .ya-step{
-  font-size:9px;letter-spacing:.2em;text-transform:uppercase;
-  color:rgba(184,134,11,.45);transition:color 420ms ease;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(255,248,231,.26);transition:color 420ms cubic-bezier(.32,.72,0,1);
 }
-.ya-step[data-state="done"]{color:rgba(184,134,11,.95)}
-.ya-step[data-state="now"]{color:#FFD60A;text-shadow:0 0 14px rgba(255,214,10,.5)}
-.ya-tick{width:9px;height:1px;background:rgba(184,134,11,.35)}
+.ya-step[data-state="done"]{color:rgba(184,134,11,.9)}
+.ya-step[data-state="now"]{color:#FFD60A}
+.ya-tick{width:10px;height:1px;background:rgba(255,255,255,.14);flex:none}
 
 /* --- body: these forms are short, so centre them instead of
        stranding them at the top of a tall column ------------------ */
@@ -112,183 +132,256 @@ function AuthStyles() {
 /* fill-mode 'backwards' so the entrance hands opacity/transform back
    and the exit transition can win. */
 .ya-stage{
-  animation:ya-rise 400ms cubic-bezier(.22,1,.36,1) backwards;
+  animation:ya-rise 400ms cubic-bezier(.32,.72,0,1) backwards;
   transition:opacity ${STEP_SWAP_MS}ms ease, transform ${STEP_SWAP_MS}ms ease;
 }
 .ya-stage[data-phase="out"]{opacity:0;transform:translateY(-14px)}
 
-/* --- type ------------------------------------------------------- */
+/* --- type ladder -------------------------------------------------- */
 .ya-eyebrow{
-  font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:#B8860B;
-  margin:0 0 14px;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:#B8860B;margin:0 0 12px;
 }
 .ya-h1{
-  font-size:clamp(28px,7.6vw,38px);font-weight:600;letter-spacing:-.04em;
-  line-height:1.05;color:#FFF8E7;margin:0;text-wrap:balance;
+  font-size:clamp(26px,7.2vw,30px);font-weight:700;letter-spacing:-.03em;
+  line-height:1.1;color:#FFF8E7;margin:0;text-wrap:balance;
 }
 .ya-h1 em{font-style:normal;color:#FFD60A}
 .ya-sub{
-  font-size:14.5px;line-height:1.55;color:rgba(255,248,231,.55);
-  margin:14px 0 0;max-width:34ch;text-wrap:pretty;
+  font-size:15px;line-height:1.5;color:rgba(255,248,231,.62);
+  margin:12px 0 0;max-width:36ch;text-wrap:pretty;
 }
-.ya-sub b{font-weight:500;color:rgba(255,248,231,.82)}
+.ya-sub b{font-weight:500;color:#FFF8E7}
 
-/* --- fields ----------------------------------------------------- */
+/* --- fields: iOS inset cards, hairline stroke, yellow on focus ----- */
 .ya-form{margin-top:26px;display:flex;flex-direction:column;gap:10px}
 .ya-field{
-  position:relative;padding-left:14px;border-radius:4px 16px 16px 4px;
-  background:rgba(255,248,231,.035);transition:background 260ms ease;
+  position:relative;border-radius:14px;background:rgba(255,255,255,.045);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),inset 0 1px 0 rgba(255,255,255,.05);
+  transition:background 260ms cubic-bezier(.32,.72,0,1),
+             box-shadow 260ms cubic-bezier(.32,.72,0,1);
 }
-.ya-field::before{
-  content:'';position:absolute;left:0;top:0;bottom:0;width:2px;border-radius:999px;
-  background:rgba(184,134,11,.42);
-  transition:background 260ms ease,box-shadow 260ms ease;
+.ya-field:focus-within{
+  background:rgba(255,214,10,.07);
+  box-shadow:inset 0 0 0 1px rgba(255,214,10,.42),inset 0 1px 0 rgba(255,255,255,.05);
 }
-.ya-field:focus-within{background:rgba(255,214,10,.05)}
-.ya-field:focus-within::before{background:#FFD60A;box-shadow:0 0 16px rgba(255,214,10,.75)}
 .ya-label{
-  display:block;padding:11px 14px 0 4px;
-  font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:rgba(184,134,11,.95);
+  display:block;padding:11px 14px 0;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(184,134,11,.9);transition:color 260ms ease;
 }
-.ya-inputrow{display:flex;align-items:flex-end;gap:10px;padding-right:13px}
+.ya-field:focus-within .ya-label{color:rgba(255,214,10,.85)}
+.ya-inputrow{display:flex;align-items:flex-end;gap:4px;padding:0 10px 0 14px}
 /* 16px keeps iOS from zooming the viewport on focus. */
 .ya-input{
-  flex:1;min-width:0;border:0;background:transparent;padding:3px 0 12px 4px;
-  color:#FFF8E7;font-size:16px;line-height:1.45;letter-spacing:-.015em;
+  flex:1;min-width:0;border:0;background:transparent;padding:4px 0 12px;
+  color:#FFF8E7;font-size:16px;line-height:1.4;letter-spacing:-.015em;
 }
 .ya-input:focus{outline:none}
 .ya-input::placeholder{color:rgba(255,248,231,.26)}
-.ya-input:disabled{color:rgba(255,248,231,.42);cursor:default}
+.ya-input:disabled{color:rgba(255,248,231,.40);cursor:default}
+/* ::after grows the hit area to 44px without moving the glyph. */
 .ya-peek{
-  flex:none;border:0;background:transparent;cursor:pointer;padding:2px 0 13px;
-  font-size:9px;letter-spacing:.16em;text-transform:uppercase;
-  color:rgba(184,134,11,.95);transition:color 180ms ease;
+  position:relative;flex:none;display:flex;align-items:center;justify-content:center;
+  width:34px;height:34px;margin-bottom:5px;padding:0;
+  border:0;border-radius:999px;background:transparent;cursor:pointer;
+  color:rgba(255,248,231,.55);transition:color 180ms ease;
+  -webkit-tap-highlight-color:transparent;
 }
-.ya-peek:hover:not(:disabled){color:#FFD60A}
-.ya-peek:disabled{color:rgba(184,134,11,.4);cursor:default}
-.ya-peek:focus-visible{outline:2px solid #FFD60A;outline-offset:2px;border-radius:4px}
+.ya-peek::after{content:'';position:absolute;inset:-5px}
+.ya-peek:hover:not(:disabled),.ya-peek[aria-pressed="true"]:not(:disabled){color:#FFD60A}
+.ya-peek:disabled{color:rgba(255,248,231,.26);cursor:default}
+.ya-peek:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
 
-/* --- password requirements: the filaments warm up one by one
-       instead of grading you pass/fail -------------------------- */
+/* --- password requirements: cold = quiet outline, met = tinted ---- */
 .ya-rules{
-  display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0;padding:0;list-style:none;
+  display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0;padding:0;list-style:none;
 }
 .ya-rule{
-  display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;
-  border-radius:999px;border:1px solid rgba(184,134,11,.28);
-  font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
-  color:rgba(184,134,11,.9);
-  transition:color 300ms ease,border-color 300ms ease,background 300ms ease,box-shadow 300ms ease;
+  display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 11px 0 9px;
+  border-radius:999px;background:transparent;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.10);
+  font-size:10.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;
+  color:rgba(255,248,231,.40);
+  transition:color 320ms cubic-bezier(.32,.72,0,1),
+             background 320ms cubic-bezier(.32,.72,0,1),
+             box-shadow 320ms cubic-bezier(.32,.72,0,1);
 }
 .ya-rule-mark{
-  width:5px;height:5px;border-radius:999px;background:rgba(184,134,11,.5);flex:none;
-  transition:background 300ms ease,transform 300ms cubic-bezier(.22,1,.36,1);
+  width:5px;height:5px;border-radius:999px;background:rgba(255,248,231,.26);flex:none;
+  transition:background 320ms ease,transform 320ms cubic-bezier(.32,.72,0,1);
 }
+/* Met = yellow glass: tint over a white base, blurred, with a top light. */
 .ya-rule[data-met="true"]{
-  color:#0B0A08;background:#FFD60A;border-color:#FFD60A;
-  box-shadow:0 0 18px rgba(255,214,10,.32);
-  animation:ya-lit 420ms cubic-bezier(.22,1,.36,1);
+  color:#FFD60A;
+  background:linear-gradient(180deg,rgba(255,214,10,.16),rgba(255,214,10,.12)),rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.22);
+  animation:ya-lit 380ms cubic-bezier(.32,.72,0,1);
 }
-.ya-rule[data-met="true"] .ya-rule-mark{background:#0B0A08;transform:scale(1.4)}
+.ya-rule[data-met="true"] .ya-rule-mark{background:#FFD60A;transform:scale(1.35)}
 
 /* --- confirmation code ------------------------------------------ */
 .ya-codefield{
-  margin-top:6px;padding:18px 12px 15px;border-radius:18px;
-  border:1px solid rgba(184,134,11,.3);background:rgba(255,248,231,.035);
-  transition:border-color 240ms ease,background 240ms ease;
+  margin-top:4px;padding:20px 14px 16px;border-radius:18px;
+  background:rgba(255,255,255,.045);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),
+             inset 0 1px 0 rgba(255,255,255,.05),
+             0 10px 30px -12px rgba(0,0,0,.6);
+  transition:background 240ms cubic-bezier(.32,.72,0,1),
+             box-shadow 240ms cubic-bezier(.32,.72,0,1);
 }
-.ya-codefield:focus-within{border-color:rgba(255,214,10,.75);background:rgba(255,214,10,.05)}
+.ya-codefield:focus-within{
+  background:rgba(255,214,10,.07);
+  box-shadow:inset 0 0 0 1px rgba(255,214,10,.42),
+             inset 0 1px 0 rgba(255,255,255,.05),
+             0 10px 30px -12px rgba(0,0,0,.6);
+}
 /* text-indent cancels the trailing letter-space so the digits stay
    optically centred rather than drifting left. */
 .ya-code{
   display:block;width:100%;border:0;background:transparent;text-align:center;
-  color:#FFF8E7;font-size:clamp(26px,7.4vw,31px);font-weight:600;
+  color:#FFF8E7;font-size:clamp(28px,7.6vw,33px);font-weight:600;
   letter-spacing:.34em;text-indent:.34em;font-variant-numeric:tabular-nums;
 }
 .ya-code:focus{outline:none}
-.ya-code::placeholder{color:rgba(255,248,231,.15)}
-.ya-ticks{display:flex;justify-content:center;gap:10px;margin-top:16px}
+.ya-code::placeholder{color:rgba(255,248,231,.16)}
+.ya-ticks{display:flex;justify-content:center;gap:9px;margin-top:18px}
 .ya-ticks span{
-  width:26px;height:2px;border-radius:999px;background:rgba(184,134,11,.3);
-  transition:background 240ms ease,box-shadow 240ms ease;
+  width:28px;height:4px;border-radius:999px;background:rgba(255,248,231,.13);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);
+  transition:background 240ms cubic-bezier(.32,.72,0,1),
+             box-shadow 240ms cubic-bezier(.32,.72,0,1);
 }
-.ya-ticks span[data-on="true"]{background:#FFD60A;box-shadow:0 0 12px rgba(255,214,10,.7)}
+/* Lit = the same yellow glass, weighted up so a 4px bar still reads lit. */
+.ya-ticks span[data-on="true"]{
+  background:linear-gradient(180deg,rgba(255,214,10,.62),rgba(255,214,10,.44)),rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.28);
+}
 
-/* --- messages --------------------------------------------------- */
+/* --- messages: glass banners, warm not alarming -------------------- */
 .ya-error,.ya-notice{
-  margin:2px 0 0;padding:11px 14px;border-radius:4px 14px 14px 4px;
-  font-size:13px;line-height:1.5;animation:ya-rise 260ms ease backwards;
+  margin:2px 0 0;padding:12px 14px;border-radius:14px;
+  font-size:13.5px;line-height:1.45;
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.22);
+  animation:ya-rise 260ms cubic-bezier(.32,.72,0,1) backwards;
 }
-/* Warm orange, not red — a wrong password is a stumble, not an alarm. */
-.ya-error{background:rgba(255,138,0,.1);border-left:2px solid #FF8A00;color:#FFCC9B}
-.ya-notice{background:rgba(255,214,10,.07);border-left:2px solid rgba(255,214,10,.65);color:rgba(255,248,231,.72)}
+.ya-error{
+  background:linear-gradient(180deg,rgba(255,138,0,.18),rgba(255,138,0,.12)),rgba(255,255,255,.05);
+  color:#FFD3AC;
+}
+.ya-notice{
+  background:linear-gradient(180deg,rgba(255,214,10,.16),rgba(255,214,10,.12)),rgba(255,255,255,.05);
+  color:rgba(255,248,231,.78);
+}
 
-/* --- CTA -------------------------------------------------------- */
+/* --- CTA: the one filled pill, and the one glow, per screen ------- */
 .ya-cta{
   display:flex;align-items:center;justify-content:center;gap:9px;
-  width:100%;height:52px;margin-top:8px;border:0;border-radius:999px;cursor:pointer;
-  background:linear-gradient(180deg,#FFDE3B,#FFC300);color:#0B0A08;text-decoration:none;
-  font-size:15.5px;font-weight:650;letter-spacing:-.015em;
-  box-shadow:0 6px 26px rgba(255,195,0,.3),inset 0 1px 0 rgba(255,255,255,.5);
-  transition:transform 200ms cubic-bezier(.22,1,.36,1),box-shadow 200ms ease,opacity 200ms ease;
+  width:100%;height:50px;margin-top:10px;border:0;border-radius:999px;cursor:pointer;
+  background:linear-gradient(180deg,#FFE45C,#FFC300);color:#1A1200;text-decoration:none;
+  font-size:15px;font-weight:600;letter-spacing:-.01em;
+  box-shadow:0 8px 24px -10px rgba(255,199,0,.55),inset 0 1px 0 rgba(255,255,255,.45);
+  transition:transform 120ms cubic-bezier(.32,.72,0,1),box-shadow 200ms ease,
+             background 200ms ease;
   -webkit-tap-highlight-color:transparent;
 }
-.ya-cta:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 10px 34px rgba(255,195,0,.44),inset 0 1px 0 rgba(255,255,255,.5)}
-.ya-cta:active:not(:disabled){transform:scale(.978)}
-.ya-cta:focus-visible{outline:2px solid #FFD60A;outline-offset:3px}
-.ya-cta:disabled{background:rgba(255,248,231,.07);color:rgba(255,248,231,.3);box-shadow:none;cursor:default}
+.ya-cta:hover:not(:disabled){
+  box-shadow:0 12px 30px -10px rgba(255,199,0,.72),inset 0 1px 0 rgba(255,255,255,.45);
+}
+.ya-cta:active:not(:disabled){transform:scale(.97)}
+.ya-cta:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
+.ya-cta:disabled{
+  background:rgba(255,255,255,.055);color:rgba(255,248,231,.26);
+  box-shadow:none;cursor:default;
+}
 
-/* --- links and footers ------------------------------------------- */
-.ya-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:18px}
-.ya-footnote{margin:14px 0 0;text-align:center;font-size:12.5px;color:rgba(255,248,231,.4)}
+/* --- plain / tinted buttons and links ---------------------------- */
+.ya-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}
+.ya-footnote{margin:16px 0 0;text-align:center;font-size:12.5px;color:rgba(255,248,231,.40)}
 .ya-link{
-  color:#FFD60A;text-decoration:none;
-  border-bottom:1px solid rgba(255,214,10,.35);padding-bottom:1px;
-  transition:border-color 180ms ease;
+  display:inline-block;padding:11px 6px;margin:-11px -2px;
+  color:#FFD60A;font-weight:500;text-decoration:none;
+  transition:color 180ms ease;-webkit-tap-highlight-color:transparent;
 }
-.ya-link:hover{border-color:#FFD60A}
-.ya-link:focus-visible{outline:2px solid #FFD60A;outline-offset:3px;border-radius:2px}
-/* Same affordance when the link is really a button (sign out). */
-button.ya-link{
-  border:0;border-bottom:1px solid rgba(255,214,10,.35);
-  background:transparent;padding:0 0 1px;font:inherit;cursor:pointer;
+.ya-link:hover{color:#FFE45C}
+.ya-link:focus-visible{outline:2px solid #FFD60A;outline-offset:2px;border-radius:8px}
+button.ya-link{border:0;background:transparent;font:inherit;cursor:pointer}
+.ya-plain{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:44px;padding:0 4px;border:0;background:transparent;cursor:pointer;
+  font-size:13.5px;font-weight:500;letter-spacing:-.01em;color:rgba(255,248,231,.62);
+  transition:color 180ms ease;-webkit-tap-highlight-color:transparent;
 }
-.ya-ghostbtn{
-  border:0;background:transparent;cursor:pointer;padding:2px 0;
-  font-size:9px;letter-spacing:.18em;text-transform:uppercase;
-  color:rgba(184,134,11,.95);transition:color 180ms ease;
+.ya-plain:hover:not(:disabled){color:#FFD60A}
+.ya-plain:disabled{color:rgba(255,248,231,.26);cursor:default}
+.ya-plain:focus-visible{outline:2px solid #FFD60A;outline-offset:2px;border-radius:10px}
+/* Secondary action = yellow glass, never a second filled pill. */
+.ya-tinted{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:44px;padding:0 18px;border:0;border-radius:999px;cursor:pointer;
+  background:linear-gradient(180deg,rgba(255,214,10,.16),rgba(255,214,10,.12)),rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.22);
+  color:#FFD60A;font-size:13.5px;font-weight:600;letter-spacing:-.01em;
+  transition:background 180ms ease,box-shadow 180ms ease,
+             transform 120ms cubic-bezier(.32,.72,0,1);
+  -webkit-tap-highlight-color:transparent;
 }
-.ya-ghostbtn:hover:not(:disabled){color:#FFD60A}
-.ya-ghostbtn:disabled{color:rgba(184,134,11,.4);cursor:default}
-.ya-ghostbtn:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
+.ya-tinted:hover:not(:disabled){
+  background:linear-gradient(180deg,rgba(255,214,10,.24),rgba(255,214,10,.18)),rgba(255,255,255,.07);
+}
+.ya-tinted:active:not(:disabled){transform:scale(.97)}
+.ya-tinted:disabled{
+  background:rgba(255,255,255,.045);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+  color:rgba(255,248,231,.26);cursor:default;
+}
+.ya-tinted:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
 
 /* --- standing notes (auth off / already signed in) --------------- */
 .ya-note{
-  margin-top:26px;padding:16px 18px;border-radius:4px 18px 18px 4px;
-  border-left:2px solid rgba(184,134,11,.75);background:rgba(255,248,231,.035);
+  margin-top:22px;padding:18px;border-radius:18px;
+  background:rgba(255,255,255,.045);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),
+             inset 0 1px 0 rgba(255,255,255,.05),
+             0 10px 30px -12px rgba(0,0,0,.6);
 }
 .ya-note-title{
-  margin:0;font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:#B8860B;
+  margin:0;font-size:10.5px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;color:#B8860B;
 }
-.ya-note-body{margin:9px 0 0;font-size:14px;line-height:1.55;color:rgba(255,248,231,.62)}
+.ya-note-body{margin:10px 0 0;font-size:15px;line-height:1.5;color:rgba(255,248,231,.62)}
 
 /* --- gate -------------------------------------------------------- */
 .ya-gate{
   flex:1;display:flex;align-items:center;justify-content:center;
-  font-size:10px;letter-spacing:.24em;text-transform:uppercase;
-  color:rgba(184,134,11,.7);animation:ya-breathe 1.5s ease-in-out infinite;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(184,134,11,.8);animation:ya-breathe 1.6s ease-in-out infinite;
 }
 
 /* --- keyframes ---------------------------------------------------- */
 @keyframes ya-rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-@keyframes ya-lit{0%{transform:scale(.92)}60%{transform:scale(1.05)}100%{transform:scale(1)}}
+@keyframes ya-lit{0%{transform:scale(.94)}60%{transform:scale(1.03)}100%{transform:scale(1)}}
 @keyframes ya-breathe{0%,100%{opacity:.4}50%{opacity:.95}}
+
+/* No backdrop-filter (older Firefox): raise the fill so nothing turns
+   into see-through soup. */
+@supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+  .ya-rule[data-met="true"],.ya-tinted,.ya-notice{background:rgba(60,48,10,.85)}
+  .ya-tinted:hover:not(:disabled){background:rgba(76,61,14,.9)}
+  .ya-error{background:rgba(68,36,6,.88)}
+  .ya-ticks span[data-on="true"]{background:rgba(255,214,10,.8)}
+}
 
 @media (prefers-reduced-motion: reduce){
   .ya-stage,.ya-error,.ya-notice{animation-duration:1ms}
   .ya-rule[data-met="true"]{animation:none}
   .ya-rule[data-met="true"] .ya-rule-mark{transform:none}
-  .ya-cta:hover:not(:disabled),.ya-cta:active:not(:disabled){transform:none}
+  .ya-ticks span{transition-duration:1ms}
+  .ya-cta:active:not(:disabled),.ya-tinted:active:not(:disabled){transform:none}
   .ya-gate{animation:none}
 }
 `}</style>
@@ -298,8 +391,6 @@ button.ya-link{
 /* ------------------------------------------------------------------ */
 
 export default function LoginPage() {
-  const router = useRouter();
-
   const [step, setStep] = useState<Step>('credentials');
   const [phase, setPhase] = useState<'in' | 'out'>('in');
 
@@ -421,7 +512,12 @@ export default function LoginPage() {
         }
 
         setRedirecting(true);
-        router.push(destination());
+        /* A full reload, not `router.push`: the app state provider lives in
+           the root layout and only resolves identity once per page load. A
+           client-side navigation would carry over whatever this tab already
+           had cached — a different account's profile, on a device that was
+           last signed in as someone else. */
+        window.location.assign(destination());
       } catch {
         if (alive.current) {
           setError("Couldn't reach the sign-in service. Try again in a moment.");
@@ -430,7 +526,7 @@ export default function LoginPage() {
         if (alive.current) setSubmitting(false);
       }
     },
-    [email, goTo, password, redirecting, router, submitting],
+    [email, goTo, password, redirecting, submitting],
   );
 
   /* ---------------- confirm then sign in ---------------- */
@@ -467,7 +563,7 @@ export default function LoginPage() {
 
         if (signedIn.res.ok && signedIn.data.ok === true) {
           setRedirecting(true);
-          router.push(destination());
+          window.location.assign(destination());
           return;
         }
 
@@ -482,7 +578,7 @@ export default function LoginPage() {
         if (alive.current) setSubmitting(false);
       }
     },
-    [code, email, goTo, password, redirecting, router, submitting],
+    [code, email, goTo, password, redirecting, submitting],
   );
 
   const handleResend = useCallback(async () => {
@@ -543,7 +639,8 @@ export default function LoginPage() {
 
       <header className="ya-rail">
         <div className="ya-mark">
-          <span className="ya-dot" aria-hidden="true" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/yellow-sun-mark-128.png" alt="" aria-hidden="true" className="ya-dot" />
           <span className="ya-wordmark">Yellow</span>
         </div>
         {configured ? (
@@ -573,7 +670,7 @@ export default function LoginPage() {
                   profile — sign-in turns on later without changing a thing.
                 </p>
               </div>
-              <Link href="/" className="ya-cta" style={{ marginTop: 22 }}>
+              <Link href="/" className="ya-cta" style={{ marginTop: 18 }}>
                 Continue to Yellow
               </Link>
             </>
@@ -585,7 +682,7 @@ export default function LoginPage() {
               <h1 className="ya-h1">
                 You&rsquo;re signed in as <em>{signedInAs}</em>.
               </h1>
-              <Link href="/" className="ya-cta" style={{ marginTop: 26 }}>
+              <Link href="/" className="ya-cta" style={{ marginTop: 24 }}>
                 Continue to Yellow
               </Link>
               <p className="ya-footnote">
@@ -648,12 +745,14 @@ export default function LoginPage() {
                     <button
                       type="button"
                       className="ya-peek"
-                      style={{ fontFamily: MONO }}
                       disabled={submitting || redirecting}
                       aria-pressed={showPassword}
                       onClick={() => setShowPassword((v) => !v)}
                     >
-                      {showPassword ? 'Hide' : 'Show'}
+                      <EyeGlyph crossed={showPassword} />
+                      <span style={srOnly}>
+                        {showPassword ? 'Hide password' : 'Show password'}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -686,7 +785,7 @@ export default function LoginPage() {
               </p>
 
               {!enforced ? (
-                <p className="ya-footnote" style={{ marginTop: 8 }}>
+                <p className="ya-footnote" style={{ marginTop: 6 }}>
                   <Link href="/" className="ya-link">
                     Skip for now
                   </Link>{' '}
@@ -762,8 +861,7 @@ export default function LoginPage() {
               <div className="ya-row">
                 <button
                   type="button"
-                  className="ya-ghostbtn"
-                  style={{ fontFamily: MONO }}
+                  className="ya-plain"
                   disabled={submitting || redirecting}
                   onClick={() => {
                     setError('');
@@ -775,8 +873,7 @@ export default function LoginPage() {
                 </button>
                 <button
                   type="button"
-                  className="ya-ghostbtn"
-                  style={{ fontFamily: MONO }}
+                  className="ya-tinted"
                   disabled={resending || submitting || redirecting}
                   onClick={handleResend}
                 >

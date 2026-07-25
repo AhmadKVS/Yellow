@@ -51,6 +51,13 @@ Named for the colour psychology: openness, warmth, growth.
 Region **us-east-2**, account **563923432327**. No client-side AWS SDK: everything
 goes through Next.js API routes so credentials stay server-side.
 
+**Visual language lives in `DESIGN.md`** and is the contract for any UI work:
+true-black canvas, three glass recipes (chrome/yellow/clear, each with a
+`-webkit-` pair and an `@supports` opaque fallback), a type ladder, pill-button
+grammar, one yellow glow per screen, stroke-SVG chrome icons, and avatars as
+photo → initials monogram via `lib/initials.ts` (Apple Contacts grammar —
+"Ahmad Noori" → AN; `Profile.emoji` persists in data but is never rendered).
+
 ---
 
 ## ⚠️ This is NOT the Next.js in your training data
@@ -177,6 +184,13 @@ Context + `useReducer`. Non-obvious invariants that must survive any edit:
 - Directory `people` live **outside** the persisted blob — never write them to
   localStorage or the state row.
 - State is keyed by the **Cognito `sub`**, resolved *before* the first state read.
+- The local `yellow:v1` cache is **owner-tagged**: the blob records the id that wrote
+  it, and a mismatch against the freshly resolved identity is discarded on hydrate
+  instead of trusted. Otherwise a second account signing in on a browser that last
+  held a different one would inherit that account's profile and connections —
+  `router.push` alone can't fix this since `AppStateProvider` (root layout) never
+  remounts on a client-side navigation, so login/signup navigate with a full reload
+  (`window.location.assign`) instead. See `ROADMAP.md` and `AGENTS.md`.
 
 ### Fail-soft everywhere
 

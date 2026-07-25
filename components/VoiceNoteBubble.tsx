@@ -14,7 +14,7 @@ const SANS =
 const MONO =
   'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace';
 
-const BAR_COUNT = 34;
+const BAR_COUNT = 38;
 
 /* ------------------------------------------------------------------ *
  * Deterministic waveform
@@ -77,40 +77,50 @@ function BubbleStyles() {
     <style href="yellow-voicenote" precedence="high">{`
 .y-vn{ --p:0; display:flex; flex-direction:column; gap:7px; min-width:0 }
 .y-vn-eyebrow{
-  font-size:9.5px; letter-spacing:.17em; text-transform:uppercase;
-  color:rgba(255,248,231,.34);
+  font-size:10.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(255,248,231,.4);
 }
+/* Yours is yellow glass, theirs is clear glass — the canvas refracts through
+   both, and the filled play knob is the only solid thing in the bubble. */
 .y-vn-body{
-  position:relative; display:flex; align-items:center; gap:11px;
-  padding:11px 14px 11px 11px; min-width:0;
+  position:relative; display:flex; align-items:center; gap:10px;
+  padding:10px 14px 10px 10px; min-width:0;
   border:1px solid var(--edge); background:var(--fill);
   box-shadow:var(--lift);
+  backdrop-filter:var(--frost); -webkit-backdrop-filter:var(--frost);
 }
-.y-vn-them .y-vn-body{ border-radius:19px 19px 19px 6px }
-.y-vn-me .y-vn-body{ border-radius:19px 19px 6px 19px }
+@supports not (backdrop-filter: blur(1px)){
+  .y-vn-them .y-vn-body{ background:rgba(38,34,26,.9) }
+  .y-vn-me .y-vn-body{ background:rgba(60,48,10,.85) }
+}
+/* Voice notes hold a fixed measure so the waveform keeps chat proportions
+   instead of stretching across a wide reading column. */
+.y-vn-voice .y-vn-body{ width:min(100%, 340px) }
+.y-vn-them .y-vn-body{ border-radius:18px 18px 18px 6px }
+.y-vn-me .y-vn-body{ border-radius:18px 18px 6px 18px }
 .y-vn-play{
-  flex:0 0 auto; width:36px; height:36px; border-radius:9999px; border:0;
+  flex:0 0 auto; width:34px; height:34px; border-radius:9999px; border:0; padding:0;
   display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
-  color:#150F00; background:var(--knob);
-  box-shadow:0 4px 14px -4px var(--knob-glow), inset 0 1px 0 rgba(255,255,255,.5);
-  transition:transform 200ms cubic-bezier(.22,1,.36,1), filter 160ms linear;
+  color:var(--ink); background:var(--knob);
+  box-shadow:var(--knob-lift);
+  transition:transform 120ms cubic-bezier(.32,.72,0,1), filter 160ms linear;
 }
-.y-vn-play:hover:not(:disabled){ transform:scale(1.06); filter:brightness(1.06) }
-.y-vn-play:active:not(:disabled){ transform:scale(.95) }
-.y-vn-play:focus-visible{ outline:2px solid #FFF8E7; outline-offset:2px }
+.y-vn-play:hover:not(:disabled){ filter:brightness(1.06) }
+.y-vn-play:active:not(:disabled){ transform:scale(.94) }
+.y-vn-play:focus-visible{ outline:2px solid var(--focus); outline-offset:2px }
 .y-vn-play:disabled{
-  cursor:default; color:rgba(255,248,231,.3);
-  background:rgba(255,248,231,.06); box-shadow:none;
+  cursor:default; color:rgba(255,248,231,.32);
+  background:rgba(255,255,255,.06); box-shadow:none;
 }
 .y-vn-wave{
-  position:relative; flex:1 1 auto; min-width:0; height:26px; overflow:hidden;
+  position:relative; flex:1 1 auto; min-width:0; height:24px; overflow:hidden;
 }
 .y-vn-row{
   position:absolute; inset:0; display:flex; align-items:center; gap:2px;
 }
 /* The played portion is the same row of bars, revealed left-to-right by a
    clip. Progress moves a single custom property, so playback never re-renders
-   the 34 bars. */
+   the bars. */
 .y-vn-row-lit{
   clip-path:inset(0 calc((1 - var(--p)) * 100%) 0 0);
   will-change:clip-path;
@@ -120,7 +130,7 @@ function BubbleStyles() {
   flex:1 1 0; min-width:2px; border-radius:2px;
   background:var(--dim);
   transform-origin:center;
-  animation:y-vn-grow 420ms cubic-bezier(.22,1,.36,1) backwards;
+  animation:y-vn-grow 380ms cubic-bezier(.32,.72,0,1) backwards;
 }
 .y-vn-row-lit .y-vn-bar{ animation:none }
 @keyframes y-vn-grow{ from{ transform:scaleY(.06); opacity:.3 } to{ transform:scaleY(1); opacity:1 } }
@@ -129,23 +139,24 @@ function BubbleStyles() {
   color:var(--stamp);
 }
 .y-vn-text{
-  margin:0; font-size:14.5px; line-height:1.52; letter-spacing:-.008em;
-  color:rgba(255,248,231,.9);
+  margin:0; font-size:15px; line-height:1.5; letter-spacing:-.006em;
+  color:#FFF8E7;
 }
 .y-vn-word{ opacity:0; transition:opacity 340ms ease }
 .y-vn-word-on{ opacity:1 }
 .y-vn-note{
   display:flex; align-items:center; gap:6px;
-  font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
+  font-size:10.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
   color:rgba(255,248,231,.3);
 }
 .y-vn-hint{
-  font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
-  color:var(--stamp); opacity:.62;
+  font-size:10.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--stamp); opacity:.7;
 }
 @media (prefers-reduced-motion: reduce){
   .y-vn-bar{ animation:none }
   .y-vn-word{ transition:none }
+  .y-vn-play{ transition-duration:1ms }
 }
 `}</style>
   );
@@ -176,8 +187,6 @@ export interface VoiceNoteBubbleProps {
   audioUrl?: string | null;
   /** The question this answers, set above the bubble. */
   label?: string;
-  /** Their persona gradient. Ignored for `side="me"`. */
-  accent?: readonly [string, string];
   className?: string;
   style?: CSSProperties;
 }
@@ -192,7 +201,6 @@ export default function VoiceNoteBubble({
   waveSeed = 1,
   audioUrl,
   label,
-  accent,
   className,
   style,
 }: VoiceNoteBubbleProps) {
@@ -311,22 +319,33 @@ export default function VoiceNoteBubble({
   /* -- palette ------------------------------------------------------ */
 
   const mine = side === 'me';
-  const [c1, c2] = accent ?? ['#FFD60A', '#FFC300'];
   const vars = {
     ['--fill' as string]: mine
-      ? 'linear-gradient(180deg, rgba(255,214,10,.13), rgba(255,195,0,.055))'
-      : 'linear-gradient(180deg, rgba(255,248,231,.062), rgba(255,248,231,.022))',
-    ['--edge' as string]: mine ? 'rgba(255,214,10,.34)' : 'rgba(255,248,231,.1)',
+      ? `linear-gradient(0deg, rgba(255,214,10,.16), rgba(255,214,10,.16)),
+         linear-gradient(0deg, rgba(255,255,255,.05), rgba(255,255,255,.05))`
+      : 'rgba(255,255,255,.06)',
+    ['--edge' as string]: mine ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.08)',
+    ['--frost' as string]: mine
+      ? 'blur(18px) saturate(1.6)'
+      : 'blur(16px) saturate(1.3)',
     ['--lift' as string]: mine
-      ? '0 10px 30px -18px rgba(255,195,0,.7)'
-      : '0 10px 30px -20px rgba(0,0,0,.9)',
+      ? 'inset 0 1px 0 rgba(255,255,255,.22)'
+      : 'inset 0 1px 0 rgba(255,255,255,.05)',
+    /* Only your own knob is filled yellow. A received note used to take the
+       sender's raw brand gradient, which put cyan and violet discs inside a
+       screen that has exactly one accent — so theirs is quiet glass instead. */
     ['--knob' as string]: mine
       ? 'linear-gradient(180deg,#FFE45C 0%,#FFC300 100%)'
-      : `linear-gradient(180deg, ${c1} 0%, ${c2} 100%)`,
-    ['--knob-glow' as string]: mine ? 'rgba(255,195,0,.7)' : `${c2}99`,
-    ['--dim' as string]: mine ? 'rgba(255,214,10,.24)' : 'rgba(255,248,231,.17)',
-    ['--lit' as string]: mine ? '#FFD60A' : c1,
-    ['--stamp' as string]: mine ? 'rgba(255,214,10,.72)' : 'rgba(255,248,231,.46)',
+      : 'rgba(255,255,255,.1)',
+    ['--ink' as string]: mine ? '#1A1200' : '#FFF8E7',
+    ['--knob-lift' as string]: mine
+      ? 'inset 0 1px 0 rgba(255,255,255,.45)'
+      : 'inset 0 0 0 1px rgba(255,255,255,.12)',
+    ['--dim' as string]: mine ? 'rgba(255,214,10,.36)' : 'rgba(255,248,231,.24)',
+    ['--lit' as string]: '#FFD60A',
+    ['--stamp' as string]: mine ? 'rgba(255,214,10,.72)' : 'rgba(255,248,231,.45)',
+    /* Cream on a cream knob would vanish, so the quiet side focuses in yellow. */
+    ['--focus' as string]: mine ? '#FFF8E7' : '#FFD60A',
   } as CSSProperties;
 
   const disabled = mode === 'unavailable' || broken;
@@ -337,7 +356,7 @@ export default function VoiceNoteBubble({
   if (mode === 'text') {
     return (
       <div
-        className={`y-vn ${mine ? 'y-vn-me' : 'y-vn-them'} ${className ?? ''}`}
+        className={`y-vn y-vn-typed ${mine ? 'y-vn-me' : 'y-vn-them'} ${className ?? ''}`}
         style={{ ...vars, ...style, fontFamily: SANS }}
       >
         <BubbleStyles />
@@ -348,7 +367,7 @@ export default function VoiceNoteBubble({
         ) : null}
         <div
           className="y-vn-body"
-          style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8, padding: '13px 15px' }}
+          style={{ flexDirection: 'column', alignItems: 'stretch', gap: 9, padding: '12px 15px' }}
         >
           <p className="y-vn-text">{text}</p>
           <span className="y-vn-hint" style={{ fontFamily: MONO }}>
@@ -363,7 +382,7 @@ export default function VoiceNoteBubble({
 
   return (
     <div
-      className={`y-vn ${mine ? 'y-vn-me' : 'y-vn-them'} ${className ?? ''}`}
+      className={`y-vn y-vn-voice ${mine ? 'y-vn-me' : 'y-vn-them'} ${className ?? ''}`}
       style={{ ...vars, ...style, fontFamily: SANS }}
     >
       <BubbleStyles />
@@ -406,18 +425,29 @@ export default function VoiceNoteBubble({
           }
         >
           {disabled ? (
-            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
-              <circle cx="7" cy="7" r="5.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
-              <path d="M3.4 10.6 10.6 3.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden>
+              <circle cx="7.5" cy="7.5" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <path
+                d="M3.7 11.3 11.3 3.7"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
             </svg>
           ) : playing ? (
             <svg width="12" height="13" viewBox="0 0 12 13" aria-hidden>
-              <rect x="1" y="1" width="3.4" height="11" rx="1.3" fill="currentColor" />
-              <rect x="7.6" y="1" width="3.4" height="11" rx="1.3" fill="currentColor" />
+              <rect x="1.1" y="0.8" width="3.4" height="11.4" rx="1.4" fill="currentColor" />
+              <rect x="7.5" y="0.8" width="3.4" height="11.4" rx="1.4" fill="currentColor" />
             </svg>
           ) : (
             <svg width="12" height="14" viewBox="0 0 12 14" aria-hidden>
-              <path d="M1.6 1.4 11 7 1.6 12.6Z" fill="currentColor" strokeLinejoin="round" strokeWidth="2.2" stroke="currentColor" />
+              <path
+                d="M2 1.8 10.4 7 2 12.2Z"
+                fill="currentColor"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinejoin="round"
+              />
             </svg>
           )}
         </button>

@@ -1,11 +1,73 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0b0a08;
+  /* Names below are load-bearing for existing call sites; only the values move.
+     `--background` drops to the v2 near-true-black canvas so contrast, not
+     bloom, does the work. */
+  --background: #050403;
   --foreground: #fff8e7;
   --yellow: #ffd60a;
   --accent: #ffc300;
   --muted-gold: #b8860b;
+
+  /* --- v2 design language (additive) --- */
+  --canvas: #050403;
+  --ink-on-yellow: #1a1200;
+
+  --yellow-top: #ffe45c;
+  --yellow-deep: #ffc300;
+  --yellow-tint: rgba(255, 214, 10, 0.13);
+  --yellow-tint-border: rgba(255, 214, 10, 0.22);
+
+  /* Text ladder on canvas. */
+  --text-1: #fff8e7;
+  --text-2: rgba(255, 248, 231, 0.62);
+  --text-3: rgba(255, 248, 231, 0.4);
+  --text-4: rgba(255, 248, 231, 0.26);
+
+  /* Surfaces & materials. */
+  --surface: rgba(255, 255, 255, 0.045);
+  --surface-hover: rgba(255, 255, 255, 0.07);
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+
+  /* --- Glass: the three recipes (DESIGN.md v2.1) ---
+     Consume as:
+       background: var(--glass-chrome);
+       -webkit-backdrop-filter: var(--glass-chrome-filter);
+       backdrop-filter: var(--glass-chrome-filter);
+     The @supports block at the bottom of this file swaps every `--glass-*`
+     value for its opaque twin in one place, so no call site needs its own
+     fallback and no browser ever sees see-through soup. */
+  --glass-chrome: rgba(20, 17, 10, 0.7);
+  --glass-chrome-filter: blur(20px) saturate(1.4);
+
+  --glass-yellow: linear-gradient(0deg, rgba(255, 214, 10, 0.14), rgba(255, 214, 10, 0.14)),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05));
+  --glass-yellow-filter: blur(18px) saturate(1.6);
+
+  --glass-clear: rgba(255, 255, 255, 0.06);
+  --glass-clear-filter: blur(16px) saturate(1.3);
+
+  /* Specular edges every glass layer shares. */
+  --glass-hairline: rgba(255, 255, 255, 0.14);
+  --glass-top-light: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+
+  /* Kept for call sites written against the earlier name. */
+  --glass: var(--glass-chrome);
+  --glass-filter: var(--glass-chrome-filter);
+
+  /* Apple's sheet/standard curve. */
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Raise every glass fill to opaque where the material can't exist. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-chrome: rgba(16, 14, 9, 0.95);
+    --glass-yellow: linear-gradient(0deg, rgba(60, 48, 10, 0.85), rgba(60, 48, 10, 0.85));
+    --glass-clear: rgba(38, 33, 24, 0.9);
+  }
 }
 
 @theme inline {
@@ -14,8 +76,17 @@
   --color-yellow: var(--yellow);
   --color-accent: var(--accent);
   --color-muted-gold: var(--muted-gold);
+  --color-canvas: var(--canvas);
+  --color-cream: var(--foreground);
+  --color-ink: var(--ink-on-yellow);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Shape scale: chips · inputs · cards · sheets. Pills use rounded-full. */
+  --radius-chip: 10px;
+  --radius-input: 14px;
+  --radius-card: 18px;
+  --radius-sheet: 22px;
 
   /* Ambient glow used behind bubbles / primary CTAs. */
   --shadow-glow: 0 0 40px rgba(255, 214, 10, 0.35);
@@ -28,6 +99,9 @@
 
   /* Subtle scale/opacity pulse for shared-tag chips. */
   --animate-chip-pulse: chip-pulse 2s ease-in-out infinite;
+
+  /* Slow inhale/exhale for a single waiting dot. */
+  --animate-breathe: breathe 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 
   @keyframes float {
     0%,
@@ -50,16 +124,56 @@
       opacity: 0.85;
     }
   }
+
+  @keyframes breathe {
+    0%,
+    100% {
+      transform: scale(0.82);
+      opacity: 0.42;
+    }
+    50% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+}
+
+html {
+  color-scheme: dark;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 248, 231, 0.16) transparent;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(255, 214, 10, 0.24);
+  color: var(--foreground);
+}
+
+/* Rule 5: a yellow ring on anything keyboard-reachable. Component styles that
+   deliberately suppress it (`.x:focus{outline:none}`) still out-specify this. */
+:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
 }
 
 /* Plain-class alias for the glow shadow token, for call sites that want
    `className="glow"` instead of the generated `shadow-glow` utility. */
 .glow {
   box-shadow: 0 0 40px rgba(255, 214, 10, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-breathe {
+    animation: none;
+    opacity: 0.85;
+  }
 }

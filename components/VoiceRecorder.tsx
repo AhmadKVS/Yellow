@@ -8,7 +8,7 @@ const SANS =
 const MONO =
   'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace';
 
-const BAR_COUNT = 26;
+const BAR_COUNT = 40;
 const WARN_AT = 10; // seconds remaining when the countdown becomes visible
 
 const MIME_CANDIDATES = [
@@ -40,92 +40,122 @@ function mmss(seconds: number): string {
 function RecorderStyles() {
   return (
     <style href="yellow-voicerecorder" precedence="high">{`
-.y-rec{ --lvl:0; --used:0; display:flex; flex-direction:column; gap:10px }
+.y-rec{ --lvl:0; --used:0; display:flex; flex-direction:column; gap:9px }
+
+/* Clear glass holding one filled control — iOS Voice Memos, in yellow. */
 .y-rec-card{
   position:relative; display:flex; align-items:center; gap:12px;
-  padding:11px 14px 11px 11px; border-radius:19px 19px 6px 19px;
-  border:1px solid rgba(255,214,10,.22);
-  background:linear-gradient(180deg, rgba(255,214,10,.07), rgba(255,195,0,.028));
-  transition:border-color 260ms ease, box-shadow 260ms ease, background 260ms ease;
+  width:100%; max-width:340px; min-height:64px;
+  padding:10px 14px 10px 10px; border-radius:18px;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter:blur(16px) saturate(1.3);
+  -webkit-backdrop-filter:blur(16px) saturate(1.3);
+  transition:border-color 220ms linear;
 }
-.y-rec-live{
-  border-color:rgba(255,214,10,calc(.34 + var(--lvl) * .5));
-  background:linear-gradient(180deg, rgba(255,214,10,calc(.09 + var(--lvl) * .1)), rgba(255,195,0,.03));
-  box-shadow:0 0 calc(16px + var(--lvl) * 42px) -10px rgba(255,195,0,calc(.35 + var(--lvl) * .5));
-}
+.y-rec-live{ border-color:rgba(255,214,10,calc(.24 + var(--lvl) * .42)) }
+
 .y-rec-btn{
-  flex:0 0 auto; width:40px; height:40px; border-radius:9999px; border:0; cursor:pointer;
-  display:inline-flex; align-items:center; justify-content:center; color:#150F00;
+  flex:0 0 auto; width:44px; height:44px; border-radius:9999px; border:0; padding:0;
+  cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center; color:#1A1200;
   background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
-  box-shadow:0 6px 18px -6px rgba(255,195,0,.75), inset 0 1px 0 rgba(255,255,255,.55);
-  transition:transform 200ms cubic-bezier(.22,1,.36,1), filter 160ms linear;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5);
+  transition:transform 120ms cubic-bezier(.32,.72,0,1), filter 160ms linear;
 }
-.y-rec-btn:hover:not(:disabled){ transform:scale(1.05); filter:brightness(1.06) }
-.y-rec-btn:active:not(:disabled){ transform:scale(.95) }
-.y-rec-btn:focus-visible{ outline:2px solid #FFF8E7; outline-offset:3px }
-.y-rec-btn:disabled{ opacity:.45; cursor:not-allowed }
-.y-rec-btn-stop{
-  background:linear-gradient(180deg,#FFF0A8 0%,#FFD60A 100%);
-  animation:y-rec-breathe 1.9s ease-in-out infinite;
+.y-rec-btn:hover:not(:disabled){ filter:brightness(1.05) }
+.y-rec-btn:active:not(:disabled){ transform:scale(.94) }
+.y-rec-btn:focus-visible{ outline:2px solid #FFF8E7; outline-offset:2px }
+.y-rec-btn:disabled{ opacity:.4; cursor:not-allowed }
+.y-rec-btn-stop{ background:#FFD60A }
+
+/* iOS Voice Memos: thin yellow bars riding a quiet hairline track, so silence
+   still reads as a level meter rather than as a dead row. */
+.y-rec-wave{
+  position:relative; flex:1 1 auto; min-width:0; height:26px;
+  display:flex; align-items:center; gap:3px;
 }
-@keyframes y-rec-breathe{
-  0%,100%{ box-shadow:0 6px 18px -6px rgba(255,195,0,.7), inset 0 1px 0 rgba(255,255,255,.55) }
-  50%{ box-shadow:0 6px 30px -4px rgba(255,214,10,.95), inset 0 1px 0 rgba(255,255,255,.7) }
+.y-rec-wave::before{
+  content:''; position:absolute; left:0; right:0; top:50%; height:1.5px;
+  margin-top:-.75px; border-radius:2px; background:rgba(255,248,231,.14);
 }
-.y-rec-wave{ flex:1 1 auto; min-width:0; height:28px; display:flex; align-items:center; gap:2px }
 .y-rec-bar{
-  flex:1 1 0; min-width:2px; height:100%; border-radius:2px;
-  background:linear-gradient(180deg,#FFE45C,#FFC300);
+  position:relative; flex:1 1 0; min-width:2px; height:100%;
+  border-radius:2px; background:#FFD60A;
   transform:scaleY(.07); transform-origin:center;
 }
-.y-rec-idlebar{ background:rgba(255,214,10,.2) }
 .y-rec-time{
   flex:0 0 auto; font-size:12px; font-variant-numeric:tabular-nums; letter-spacing:.02em;
   color:#FFD60A;
 }
+/* The 30s budget, drawn as a hairline along the card's bottom edge. */
 .y-rec-meter{
-  position:absolute; left:14px; right:14px; bottom:5px; height:2px; border-radius:2px;
-  background:rgba(255,248,231,.09); overflow:hidden;
+  position:absolute; left:18px; right:18px; bottom:6px; height:1.5px; border-radius:2px;
+  background:rgba(255,255,255,.08); overflow:hidden;
 }
 .y-rec-meter i{
-  display:block; height:100%; width:calc(var(--used) * 100%);
-  background:linear-gradient(90deg,#FFD60A,#FF9F1C);
+  display:block; height:100%; width:calc(var(--used) * 100%); background:#FFD60A;
 }
 .y-rec-label{
-  flex:1 1 auto; min-width:0; font-size:14px; letter-spacing:-.008em;
-  color:rgba(255,248,231,.72); text-align:left;
+  flex:1 1 auto; min-width:0; font-size:15px; letter-spacing:-.006em;
+  color:rgba(255,248,231,.62); text-align:left;
 }
+
+/* Tinted pill, as yellow glass — the secondary grammar. */
+.y-rec-pill{
+  display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+  height:32px; padding:0 14px; border-radius:9999px; cursor:pointer; white-space:nowrap;
+  font-size:10.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
+  color:#FFD60A;
+  background:linear-gradient(0deg, rgba(255,214,10,.14), rgba(255,214,10,.14)),
+             linear-gradient(0deg, rgba(255,255,255,.05), rgba(255,255,255,.05));
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
+  backdrop-filter:blur(18px) saturate(1.6);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);
+  transition:filter 180ms linear, transform 120ms cubic-bezier(.32,.72,0,1);
+}
+.y-rec-pill:hover:not(:disabled){ filter:brightness(1.25) }
+.y-rec-pill:active:not(:disabled){ transform:scale(.97) }
+.y-rec-pill:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
+.y-rec-pill:disabled{ opacity:.4; cursor:not-allowed }
+
 .y-rec-quiet{
-  border:0; background:none; cursor:pointer; padding:2px 0;
-  font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
+  border:0; background:none; cursor:pointer; padding:4px 2px; white-space:nowrap;
+  font-size:10.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
   color:rgba(255,248,231,.4);
   transition:color 180ms linear;
 }
 .y-rec-quiet:hover{ color:#FFD60A }
 .y-rec-quiet:focus-visible{ outline:2px solid #FFD60A; outline-offset:3px; border-radius:4px }
 .y-rec-quiet:disabled{ opacity:.4; cursor:not-allowed }
-.y-rec-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 4px }
+.y-rec-foot{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  min-height:32px; padding:0 2px; max-width:340px;
+}
 .y-rec-note{
-  font-size:11.5px; line-height:1.45; letter-spacing:-.004em;
-  color:rgba(255,248,231,.44); margin:0;
+  font-size:12.5px; line-height:1.45; color:rgba(255,248,231,.4); margin:0;
 }
-.y-rec-warn{ color:#FF9F1C; animation:y-rec-blink 1s steps(2,end) infinite }
-@keyframes y-rec-blink{ 50%{ opacity:.35 } }
+.y-rec-warn{ color:#FFD60A }
+
+/* Typed fallback — plain iOS form field. */
 .y-rec-ta{
-  width:100%; min-height:96px; resize:vertical; padding:13px 15px;
-  border-radius:19px 19px 6px 19px; border:1px solid rgba(255,214,10,.28);
-  background:linear-gradient(180deg, rgba(255,214,10,.07), rgba(255,195,0,.025));
-  color:#FFF8E7; font-size:14.5px; line-height:1.52; letter-spacing:-.008em;
-  outline:none; transition:border-color 200ms linear, box-shadow 200ms linear;
+  width:100%; max-width:340px; min-height:104px; resize:vertical; padding:12px 14px;
+  border-radius:14px; border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.045);
+  color:#FFF8E7; font-size:15px; line-height:1.5; letter-spacing:-.006em;
+  outline:none; transition:border-color 180ms linear, background 180ms linear;
 }
-.y-rec-ta::placeholder{ color:rgba(255,248,231,.28) }
-.y-rec-ta:focus{
-  border-color:rgba(255,214,10,.6);
-  box-shadow:0 0 0 3px rgba(255,214,10,.12);
+.y-rec-ta::placeholder{ color:rgba(255,248,231,.26) }
+.y-rec-ta:focus{ border-color:rgba(255,214,10,.45); background:rgba(255,255,255,.06) }
+.y-rec-ta:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
+@supports not (backdrop-filter: blur(1px)){
+  .y-rec-card{ background:rgba(38,34,26,.9) }
+  .y-rec-pill{ background:rgba(60,48,10,.85) }
 }
 @media (prefers-reduced-motion: reduce){
-  .y-rec-btn-stop{ animation:none }
-  .y-rec-warn{ animation:none }
+  .y-rec-btn,.y-rec-pill,.y-rec-card{ transition-duration:1ms }
 }
 `}</style>
   );
@@ -453,7 +483,7 @@ export default function VoiceRecorder({
             </span>
             <button
               type="button"
-              className="y-rec-quiet"
+              className="y-rec-pill"
               style={{ fontFamily: MONO }}
               onClick={reRecord}
               disabled={disabled}
@@ -479,18 +509,15 @@ export default function VoiceRecorder({
             {micUsable ? (
               <button
                 type="button"
-                className="y-rec-quiet"
-                style={{ fontFamily: MONO, whiteSpace: 'nowrap' }}
+                className="y-rec-pill"
+                style={{ fontFamily: MONO }}
                 onClick={backToMic}
                 disabled={disabled}
               >
                 Use my mic
               </button>
             ) : (
-              <span
-                className="y-rec-quiet"
-                style={{ fontFamily: MONO, whiteSpace: 'nowrap' }}
-              >
+              <span className="y-rec-quiet" style={{ fontFamily: MONO }}>
                 {typed.trim().length}/400
               </span>
             )}
@@ -512,16 +539,16 @@ export default function VoiceRecorder({
               }
             >
               {phase === 'recording' ? (
-                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
-                  <rect x="0" y="0" width="12" height="12" rx="3" fill="currentColor" />
+                <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden>
+                  <rect x="0" y="0" width="13" height="13" rx="3.6" fill="currentColor" />
                 </svg>
               ) : (
-                <svg width="15" height="19" viewBox="0 0 15 19" aria-hidden>
-                  <rect x="4.6" y="0.9" width="5.8" height="10.2" rx="2.9" fill="currentColor" />
+                <svg width="16" height="20" viewBox="0 0 16 20" aria-hidden>
+                  <rect x="5" y="1" width="6" height="10.6" rx="3" fill="currentColor" />
                   <path
-                    d="M1.7 8.4a5.8 5.8 0 0 0 11.6 0M7.5 14.2v3.9"
+                    d="M2 8.9a6 6 0 0 0 12 0M8 15v4"
                     stroke="currentColor"
-                    strokeWidth="1.7"
+                    strokeWidth="1.8"
                     strokeLinecap="round"
                     fill="none"
                   />
@@ -572,7 +599,7 @@ export default function VoiceRecorder({
               <button
                 type="button"
                 className="y-rec-quiet"
-                style={{ fontFamily: MONO, whiteSpace: 'nowrap' }}
+                style={{ fontFamily: MONO }}
                 onClick={() => switchToTyping(null, false)}
                 disabled={disabled}
               >

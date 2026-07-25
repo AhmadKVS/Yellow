@@ -8,7 +8,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 **Read `PRIMER.md` first.** It covers the product, architecture, and the AWS gotchas
 that have already cost real time. `ROADMAP.md` has current status; `DEPLOY.md` covers
-Amplify.
+Amplify. **Any UI work must follow `DESIGN.md`** — glass recipes, type ladder, button
+grammar, the one-glow budget, and photo → initials-monogram avatars
+(`lib/initials.ts`; never render `Profile.emoji`, never re-derive initials locally).
 
 ## Version specifics that break training-data assumptions
 
@@ -41,6 +43,16 @@ Amplify.
   real `sub`. Two ids for one person means every pair with them silently splits into
   two half-filled `pair#` rows that never both complete — permanent "waiting on
   them" on both sides. Cost a real, already-live connection; see `ROADMAP.md`.
+- **`AppStateProvider` mounts once per page load and stays mounted across every
+  client-side navigation** — it lives in the root layout, so `resolveIdentity()`'s
+  result and the hydrated profile never re-check themselves after a `router.push`.
+  Any flow that changes *who is signed in* (login, signup-then-login) must navigate
+  with a full reload (`window.location.assign`), never `router.push` — otherwise the
+  app keeps rendering the previous session's identity and cached profile. The local
+  `yellow:v1` cache is also owner-tagged (`toBlob`'s `owner` field): a blob written by
+  a different Cognito `sub` than the one just resolved is discarded on hydrate rather
+  than trusted, so a second account signing in on the same browser can never inherit
+  the first account's profile. See `ROADMAP.md`.
 - **Directory `people` and shared `hubs` never enter the persisted blob** (not
   localStorage, not the state row). `LocalAppState = Omit<AppState, 'hubs'>` enforces
   this for hubs at the type level — don't widen `LocalAppState` back to `AppState`.
@@ -67,6 +79,11 @@ Amplify.
   `'use client'` file.
 - Secrets live in `.env.local` (gitignored) and never in code, logs, or commits.
 - Default to **no comments**; add one only where the *why* isn't evident from the code.
+- **Do not create test/mock accounts** in the live `yellow-users`, `yellow-app`, or
+  `yellow-hubs` tables (directly via `aws dynamodb`, a script, or the app). Testing is
+  complete — the directory should only ever hold real accounts from here on. A batch
+  of generated test rows and two demo accounts ("Hub Demo", "Guest Demo") were
+  already created and removed; don't reintroduce that pattern.
 
 ## Verify before claiming done
 

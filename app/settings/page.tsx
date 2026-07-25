@@ -32,6 +32,7 @@ import VoiceNoteBubble, {
 import VoiceRecorder, { type VoiceAnswer } from '@/components/VoiceRecorder';
 import { resolvePlaybackUrl, uploadClip } from '@/lib/audioClient';
 import { setAudioUrl } from '@/lib/audioStore';
+import { initialsFor } from '@/lib/initials';
 import {
   INTRO_KEYS,
   fetchIntro,
@@ -54,8 +55,6 @@ const SANS =
   'var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 const MONO =
   'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace';
-const EMOJI_FACE =
-  '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
 
 const MAX_NAME = 40;
 const MAX_TAGLINE = 60;
@@ -68,21 +67,13 @@ const SAVED_NOTE_MS = 2600;
 /** S3 is a nice-to-have. Give it a moment, then save the intro regardless. */
 const UPLOAD_BUDGET_MS = 2500;
 
-/** Must stay in step with `app/onboarding/page.tsx` — the same twelve faces. */
-const AVATARS = [
-  '🐝',
-  '🍋',
-  '🌞',
-  '🚀',
-  '🔥',
-  '🪐',
-  '☕',
-  '🧭',
-  '🎧',
-  '🦊',
-  '🌊',
-  '🏔️',
-];
+/**
+ * Avatars are a photo or an initials monogram now — nobody picks an emoji any
+ * more. `Profile.emoji` is still part of the frozen contract, so every save
+ * keeps carrying a value for readers that expect one; this is just the value
+ * used when a profile somehow reaches this screen without one.
+ */
+const DEFAULT_EMOJI = '🐝';
 
 const QUESTIONS: { key: IntroKey; label: string }[] = [
   { key: 'who', label: 'Who are you?' },
@@ -198,6 +189,54 @@ const srOnly: CSSProperties = {
 };
 
 /* ------------------------------------------------------------------ */
+/* Chrome icons — inline SVG, stroke 1.8, round caps. Never emoji.     */
+/* (Emoji on this screen are avatars, which is content, not chrome.)   */
+/* ------------------------------------------------------------------ */
+
+const stroked = {
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  fill: 'none',
+};
+
+function IconCamera({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden focusable="false">
+      <path
+        d="M4 8.5h2.6l1.3-2h8.2l1.3 2H20a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z"
+        {...stroked}
+      />
+      <circle cx="12" cy="13.4" r="3.1" {...stroked} />
+    </svg>
+  );
+}
+
+/**
+ * Apple Contacts monogram — one letter reads bigger than two. The letters sit
+ * on whatever disc material the caller already painted; this only draws type.
+ */
+function Monogram({ name, size }: { name: string; size: number }) {
+  const letters = initialsFor(name);
+  return (
+    <span
+      style={{
+        fontFamily: SANS,
+        fontSize: Math.round(size * (letters.length > 1 ? 0.32 : 0.4)),
+        fontWeight: 600,
+        letterSpacing: '0.02em',
+        lineHeight: 1,
+        color: '#FFF8E7',
+        textShadow: '0 1px 3px rgba(0,0,0,.35)',
+      }}
+    >
+      {letters}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Scoped stylesheet — React hoists and dedupes by `href`.             */
 /* ------------------------------------------------------------------ */
 
@@ -205,71 +244,78 @@ function SettingsStyles() {
   return (
     <style href="yellow-settings" precedence="high">{`
 /* PhoneFrame owns the scroll container and the horizontal gutters
-   (max-w-[560px] + px-5/md:px-8), so this page adds no side padding. Both
+   (max-w-[1040px] + px-5/md:px-8), so this page adds no side padding. Both
    sticky elements resolve against that scroller. */
-.ys-root{position:relative;display:block;min-height:100dvh;padding-bottom:10px}
+.ys-root{position:relative;display:block;min-height:100dvh;padding-bottom:12px}
 
-/* --- header rail -------------------------------------------------- */
+/* --- header rail: glass, and only where it floats ----------------- */
 .ys-rail-top{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
-  padding:18px 0 14px;position:sticky;top:0;z-index:3;
-  /* Glass, not a flat fill: an opaque band reads as a hard rectangle against
-     the frame's ambient glow in the desktop gutters. */
-  background:linear-gradient(180deg,rgba(11,10,8,.92) 0%,rgba(11,10,8,.74) 55%,rgba(11,10,8,0) 100%);
-  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  padding:16px 0 14px;position:sticky;top:0;z-index:3;
+  /* Chrome glass. The mask fades the material out with the scrim so it has
+     no hard bottom edge against the frame's ambient glow in the gutters. */
+  background:linear-gradient(180deg,rgba(20,17,10,.86) 0%,rgba(20,17,10,.62) 58%,rgba(20,17,10,0) 100%);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-mask-image:linear-gradient(180deg,#000 0%,#000 76%,transparent 100%);
+  mask-image:linear-gradient(180deg,#000 0%,#000 76%,transparent 100%);
 }
-.ys-mark{display:flex;align-items:center;gap:8px}
+.ys-mark{display:flex;align-items:center;gap:9px}
 .ys-dot{
-  width:8px;height:8px;border-radius:999px;background:#FFD60A;flex:none;
-  box-shadow:0 0 12px rgba(255,214,10,.85);
+  width:7px;height:7px;border-radius:999px;background:#FFD60A;flex:none;
+  box-shadow:0 0 12px rgba(255,214,10,.8);
 }
 .ys-mark-text{
-  font-size:9.5px;letter-spacing:.24em;text-transform:uppercase;color:#FFF8E7;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(255,248,231,.72);
 }
 .ys-tally{
-  font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
-  color:rgba(184,134,11,.85);transition:color 420ms ease;flex:none;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(184,134,11,.95);transition:color 420ms ease;flex:none;
   font-variant-numeric:tabular-nums;
 }
-.ys-tally[data-todo="true"]{color:#FFD60A;text-shadow:0 0 14px rgba(255,214,10,.45)}
+.ys-tally[data-todo="true"]{color:#FFD60A}
 
 /* --- masthead ----------------------------------------------------- */
 .ys-h1{
-  font-size:clamp(26px,7vw,34px);font-weight:600;letter-spacing:-.038em;
-  line-height:1.06;color:#FFF8E7;margin:6px 0 0;text-wrap:balance;
+  font-size:30px;font-weight:700;letter-spacing:-.03em;
+  line-height:1.08;color:#FFF8E7;margin:10px 0 0;text-wrap:balance;
 }
+@media (min-width:520px){ .ys-h1{font-size:34px} }
 .ys-h1 em{font-style:normal;color:#FFD60A}
 .ys-lede{
-  font-size:14px;line-height:1.55;color:rgba(255,248,231,.5);
-  margin:13px 0 0;max-width:36ch;text-wrap:pretty;
+  font-size:15px;line-height:1.5;letter-spacing:-.006em;
+  color:rgba(255,248,231,.62);margin:12px 0 0;max-width:38ch;text-wrap:pretty;
 }
 
 /* --- the live card: you, as you'll appear in the orbit ------------- */
 .ys-card{
-  display:flex;align-items:center;gap:14px;margin-top:22px;padding:14px 16px;
-  border-radius:22px;border:1px solid rgba(184,134,11,.26);
-  background:linear-gradient(180deg,rgba(255,248,231,.05),rgba(255,248,231,.014));
+  display:flex;align-items:center;gap:15px;margin-top:24px;padding:16px;
+  border-radius:22px;border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.045);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 10px 30px -12px rgba(0,0,0,.6);
 }
 .ys-face{
-  flex:none;width:58px;height:58px;border-radius:999px;overflow:hidden;
-  display:flex;align-items:center;justify-content:center;font-size:27px;
-  box-shadow:0 12px 28px -14px rgba(0,0,0,.95),inset 0 1px 0 rgba(255,255,255,.45);
+  flex:none;width:60px;height:60px;border-radius:999px;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.34),
+             inset 0 0 0 1px rgba(255,214,10,.14),
+             0 10px 24px -12px rgba(0,0,0,.9);
 }
 .ys-face-photo{width:100%;height:100%;object-fit:cover}
-.ys-face span{display:block;animation:ys-pop 380ms cubic-bezier(.22,1,.36,1) backwards}
+.ys-face span{display:block;animation:ys-pop 380ms cubic-bezier(.32,.72,0,1) backwards}
 .ys-card-name{
-  margin:0;font-size:18px;font-weight:640;letter-spacing:-.026em;line-height:1.16;
+  margin:0;font-size:21px;font-weight:600;letter-spacing:-.02em;line-height:1.18;
   color:#FFF8E7;overflow-wrap:anywhere;
 }
-.ys-card-name[data-empty="true"]{color:rgba(255,248,231,.28);font-weight:500}
+.ys-card-name[data-empty="true"]{color:rgba(255,248,231,.26);font-weight:500}
 .ys-card-tag{
-  margin:4px 0 0;font-size:12.5px;line-height:1.4;color:rgba(255,248,231,.48);
+  margin:4px 0 0;font-size:13.5px;line-height:1.4;color:rgba(255,248,231,.5);
   overflow-wrap:anywhere;
 }
-.ys-card-tag[data-empty="true"]{color:rgba(255,248,231,.24)}
+.ys-card-tag[data-empty="true"]{color:rgba(255,248,231,.26)}
 .ys-card-live{
-  display:flex;align-items:center;gap:6px;margin:8px 0 0;
-  font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  display:flex;align-items:center;gap:7px;margin:9px 0 0;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
   color:rgba(184,134,11,.95);
 }
 .ys-card-live i{
@@ -287,245 +333,293 @@ function SettingsStyles() {
    sections no longer are one. */
 .ys-dash{display:flex;flex-direction:column;gap:22px}
 @media (min-width:860px){
-  .ys-dash{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start}
+  .ys-dash{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
 }
 .ys-sec{
-  position:relative;padding:20px 20px 26px;margin-top:22px;
-  border-radius:22px;border:1px solid rgba(184,134,11,.2);
-  background:linear-gradient(180deg,rgba(255,248,231,.03),rgba(255,248,231,.008));
+  position:relative;padding:20px 20px 24px;margin-top:22px;
+  border-radius:22px;border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.045);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 10px 30px -12px rgba(0,0,0,.6);
 }
 .ys-dash .ys-sec{margin-top:0}
 .ys-node{
-  flex:none;width:18px;height:18px;border-radius:999px;
+  flex:none;width:16px;height:16px;border-radius:999px;
   display:flex;align-items:center;justify-content:center;
-  border:1px solid rgba(255,248,231,.16);background:rgba(255,248,231,.03);
-  transition:border-color 460ms ease,box-shadow 460ms ease;
+  border:1px solid rgba(255,255,255,.16);background:transparent;
+  transition:border-color 460ms ease;
 }
 .ys-node i{
-  width:8px;height:8px;border-radius:999px;background:transparent;
-  transform:scale(.35);
-  transition:background 460ms ease,transform 460ms cubic-bezier(.22,1,.36,1);
+  width:7px;height:7px;border-radius:999px;background:transparent;
+  transform:scale(.3);
+  transition:background 460ms ease,transform 460ms cubic-bezier(.32,.72,0,1);
 }
-.ys-node[data-state="done"]{
-  border-color:rgba(255,214,10,.62);box-shadow:0 0 15px -2px rgba(255,195,0,.7);
-}
+.ys-node[data-state="done"]{border-color:rgba(255,214,10,.5)}
 .ys-node[data-state="done"] i{
   background:linear-gradient(180deg,#FFE45C,#FFC300);transform:scale(1);
 }
 .ys-node[data-state="todo"]{
-  border-color:rgba(255,214,10,.55);
-  animation:ys-breathe 2.5s ease-in-out infinite;
+  border-color:rgba(255,214,10,.45);
+  animation:ys-breathe 2.6s ease-in-out infinite;
 }
 
 /* --- section type -------------------------------------------------- */
 .ys-label{
   display:flex;align-items:center;gap:10px;margin:0;
-  font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:#B8860B;
-  font-weight:400;
+  font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(184,134,11,.95);font-weight:500;
 }
 .ys-label::after{
   content:'';flex:1;height:1px;
-  background:linear-gradient(90deg,rgba(184,134,11,.4),rgba(184,134,11,0));
+  background:linear-gradient(90deg,rgba(255,255,255,.1),rgba(255,255,255,0));
 }
 .ys-why{
-  margin:11px 0 0;font-size:12.5px;line-height:1.5;
-  color:rgba(255,248,231,.46);max-width:40ch;text-wrap:pretty;
+  margin:12px 0 0;font-size:12.5px;line-height:1.5;
+  color:rgba(255,248,231,.4);max-width:40ch;text-wrap:pretty;
 }
-.ys-why b{color:rgba(255,248,231,.78);font-weight:600}
+.ys-why b{color:rgba(255,248,231,.74);font-weight:600}
 
 /* --- fields -------------------------------------------------------- */
-.ys-field{margin-top:16px}
+.ys-field{margin-top:18px}
 .ys-fieldhead{
   display:flex;align-items:baseline;justify-content:space-between;gap:10px;
-  margin-bottom:7px;
+  margin-bottom:8px;
 }
 .ys-fieldname{
-  font-size:10px;letter-spacing:.14em;text-transform:uppercase;
-  color:rgba(255,248,231,.42);
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(255,248,231,.4);
 }
 .ys-count{
-  font-size:10px;letter-spacing:.1em;color:rgba(184,134,11,.7);
+  font-size:10.5px;letter-spacing:.06em;color:rgba(184,134,11,.9);
   font-variant-numeric:tabular-nums;flex:none;
 }
 .ys-input{
-  display:block;width:100%;height:46px;padding:0 15px;
-  background:rgba(255,248,231,.045);border:1px solid rgba(184,134,11,.3);
-  border-radius:14px;color:#FFF8E7;font-size:15.5px;letter-spacing:-.014em;
-  font-weight:500;
+  display:block;width:100%;height:48px;padding:0 15px;
+  background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;color:#FFF8E7;font-size:15px;letter-spacing:-.008em;
+  font-weight:450;
   transition:border-color 220ms ease,background 220ms ease;
 }
 .ys-input::placeholder{color:rgba(255,248,231,.26);font-weight:400}
 .ys-input:focus{
-  outline:none;border-color:rgba(255,214,10,.75);background:rgba(255,214,10,.05);
+  outline:none;border-color:rgba(255,214,10,.5);background:rgba(255,214,10,.045);
 }
 
-/* Capped so the tiles stay ~56px at every column width rather than ballooning
-   into slabs on desktop. Same grid onboarding uses. */
-.ys-faces{
-  display:grid;grid-template-columns:repeat(6,1fr);gap:9px;max-width:404px;
-}
-.ys-facebtn{
-  aspect-ratio:1;display:flex;align-items:center;justify-content:center;
-  border-radius:16px;border:1px solid rgba(184,134,11,.24);background:transparent;
-  font-size:clamp(19px,4.4vw,25px);cursor:pointer;
-  transition:border-color 200ms ease,background 200ms ease,transform 200ms cubic-bezier(.22,1,.36,1);
+/* --- the photo field ----------------------------------------------- */
+/* Nobody picks an emoji any more: an avatar is your photo, or the initials
+   that stand in until there is one. iOS Contacts, not a sticker sheet. */
+.ys-photo-row{display:flex;align-items:center;gap:16px}
+.ys-photo-btn{
+  position:relative;flex:none;width:76px;height:76px;border-radius:999px;padding:0;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.3),
+             inset 0 0 0 1px rgba(255,214,10,.12),
+             0 10px 24px -14px rgba(0,0,0,.9);
+  transition:transform 120ms cubic-bezier(.32,.72,0,1),box-shadow 200ms ease;
   -webkit-tap-highlight-color:transparent;
 }
-.ys-facebtn:hover{border-color:rgba(255,214,10,.55);transform:translateY(-2px)}
-.ys-facebtn:active{transform:scale(.9)}
-.ys-facebtn:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
-.ys-facebtn[aria-checked="true"]{
-  border-color:#FFD60A;background:rgba(255,214,10,.15);
-  box-shadow:0 0 0 1px #FFD60A inset,0 0 20px rgba(255,214,10,.3);
-  transform:translateY(-2px) scale(1.04);
+.ys-photo-btn:hover:not(:disabled){box-shadow:inset 0 1px 1px rgba(255,255,255,.3),
+             inset 0 0 0 1px rgba(255,214,10,.3),0 10px 24px -14px rgba(0,0,0,.9)}
+.ys-photo-btn:active:not(:disabled){transform:scale(.96)}
+.ys-photo-btn:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
+.ys-photo-btn:disabled{cursor:default;opacity:.6}
+.ys-photo-veil{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:rgba(255,248,231,.9);background:rgba(0,0,0,.34);opacity:0;
+  transition:opacity 200ms ease;
 }
-.ys-face-wrap{position:relative;aspect-ratio:1}
-.ys-face-wrap .ys-facebtn{width:100%;height:100%;aspect-ratio:auto;font-size:17px;overflow:hidden}
+.ys-photo-btn:hover .ys-photo-veil,
+.ys-photo-btn:focus-visible .ys-photo-veil{opacity:1}
 .ys-face-img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
-.ys-face-clear{
-  position:absolute;top:-5px;right:-5px;width:18px;height:18px;padding:0;
-  display:flex;align-items:center;justify-content:center;border-radius:999px;cursor:pointer;
-  border:1px solid rgba(255,214,10,.5);background:#100E09;color:#FFF8E7;font-size:9px;
-  -webkit-tap-highlight-color:transparent;
-}
-.ys-face-clear:hover{border-color:#FFD60A;color:#FFD60A}
-.ys-photo-err{margin:8px 0 0;font-size:11.5px;color:#FFC300}
+.ys-photo-acts{display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}
+.ys-photo-err{margin:9px 0 0;font-size:12.5px;color:#FFC300}
+.ys-hint{margin:10px 0 0;font-size:12.5px;line-height:1.45;color:rgba(255,248,231,.4)}
 .ys-textarea{
   display:block;width:100%;min-height:120px;padding:13px 15px;resize:vertical;
-  background:rgba(255,248,231,.045);border:1px solid rgba(184,134,11,.3);
-  border-radius:14px;color:#FFF8E7;font-size:14.5px;line-height:1.55;letter-spacing:-.008em;
-  font-weight:450;font-family:inherit;
+  background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;color:#FFF8E7;font-size:15px;line-height:1.5;letter-spacing:-.006em;
+  font-weight:400;font-family:inherit;
   transition:border-color 220ms ease,background 220ms ease;
 }
 .ys-textarea::placeholder{color:rgba(255,248,231,.26);font-weight:400}
 .ys-textarea:focus{
-  outline:none;border-color:rgba(255,214,10,.75);background:rgba(255,214,10,.05);
+  outline:none;border-color:rgba(255,214,10,.5);background:rgba(255,214,10,.045);
 }
 
 /* --- voice intro --------------------------------------------------- */
+/* The one thing you still owe the product. Yellow glass, not a glow:
+   urgency comes from the material being there at all, next to two cards
+   that are plain surface. */
 .ys-gate{
-  margin-top:16px;padding:16px 17px;border-radius:20px;
-  border:1px solid rgba(255,214,10,.32);
-  background:linear-gradient(180deg,rgba(255,214,10,.085),rgba(255,195,0,.02));
-  box-shadow:0 0 40px -22px rgba(255,195,0,.95);
+  margin-top:16px;padding:16px 17px;border-radius:18px;
+  background:linear-gradient(0deg,rgba(255,214,10,.13),rgba(255,214,10,.13)),
+             rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);
+  backdrop-filter:blur(18px) saturate(1.6);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
 }
 .ys-gate-eyebrow{
   display:flex;align-items:center;gap:8px;
-  font-size:9.5px;letter-spacing:.19em;text-transform:uppercase;color:#FFD60A;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:#FFD60A;
+}
+.ys-gate-eyebrow i{
+  width:5px;height:5px;border-radius:999px;background:#FFD60A;flex:none;
+  animation:ys-pulse 2.6s ease-in-out infinite;
 }
 .ys-gate-title{
-  margin:9px 0 0;font-size:17px;font-weight:650;letter-spacing:-.026em;
-  line-height:1.24;color:#FFF8E7;text-wrap:balance;
+  margin:10px 0 0;font-size:16.5px;font-weight:600;letter-spacing:-.018em;
+  line-height:1.28;color:#FFF8E7;text-wrap:balance;
 }
 .ys-gate-body{
-  margin:8px 0 0;font-size:12.5px;line-height:1.55;
-  color:rgba(255,248,231,.58);max-width:42ch;text-wrap:pretty;
+  margin:9px 0 0;font-size:13.5px;line-height:1.5;
+  color:rgba(255,248,231,.62);max-width:44ch;text-wrap:pretty;
 }
 .ys-quiet-card{
-  margin-top:16px;padding:13px 15px;border-radius:18px;
-  border:1px solid rgba(255,248,231,.08);background:rgba(255,248,231,.028);
+  margin-top:16px;padding:14px 15px;border-radius:18px;
+  border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);
 }
 .ys-quiet-eyebrow{
   display:flex;align-items:center;gap:8px;
-  font-size:9.5px;letter-spacing:.19em;text-transform:uppercase;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
   color:rgba(184,134,11,.95);
 }
 .ys-quiet-body{
-  margin:7px 0 0;font-size:12.5px;line-height:1.5;color:rgba(255,248,231,.48);
-  max-width:42ch;
+  margin:8px 0 0;font-size:13.5px;line-height:1.5;color:rgba(255,248,231,.5);
+  max-width:44ch;
 }
-.ys-q{margin-top:24px;max-width:470px}
+/* One reading column for the whole voice section: the status card, the three
+   questions and the save row all share an edge on wide viewports. */
+.ys-gate,.ys-quiet-card,.ys-q,.ys-introsave{max-width:560px}
+.ys-q{margin-top:26px}
 .ys-q-head{
-  display:flex;align-items:baseline;justify-content:space-between;gap:12px;
-  margin-bottom:11px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:32px;margin-bottom:11px;
 }
 .ys-q-label{
-  margin:0;font-size:15.5px;font-weight:620;letter-spacing:-.022em;
-  line-height:1.22;color:#FFF8E7;
+  margin:0;font-size:16.5px;font-weight:600;letter-spacing:-.016em;
+  line-height:1.28;color:#FFF8E7;
 }
-.ys-ghost{
-  border:0;background:none;cursor:pointer;padding:2px 0;flex:none;
-  font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;
-  color:rgba(255,248,231,.42);
-  transition:color 180ms linear;-webkit-tap-highlight-color:transparent;
+
+/* Pills: tinted is the secondary action, quiet is tertiary. Nothing here is
+   filled — the screen's one filled control lives in the save bar. */
+.ys-pill{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;
+  gap:6px;height:32px;padding:0 14px;border-radius:999px;
+  cursor:pointer;flex:none;white-space:nowrap;
+  font-size:12.5px;font-weight:600;letter-spacing:-.008em;
+  color:#FFD60A;
+  background:linear-gradient(0deg,rgba(255,214,10,.13),rgba(255,214,10,.13)),
+             rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);
+  backdrop-filter:blur(18px) saturate(1.6);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
+  transition:background 200ms linear,border-color 200ms linear,
+             color 200ms linear,transform 120ms cubic-bezier(.32,.72,0,1);
+  -webkit-tap-highlight-color:transparent;
 }
-.ys-ghost:hover{color:#FFD60A}
-.ys-ghost:focus-visible{outline:2px solid #FFD60A;outline-offset:3px;border-radius:4px}
-.ys-ghost:disabled{opacity:.4;cursor:not-allowed}
+.ys-pill::after{content:'';position:absolute;inset:-6px;border-radius:inherit}
+.ys-pill:hover:not(:disabled){
+  background:linear-gradient(0deg,rgba(255,214,10,.19),rgba(255,214,10,.19)),
+             rgba(255,255,255,.07);
+  border-color:rgba(255,255,255,.22);
+}
+.ys-pill:active:not(:disabled){transform:scale(.97)}
+.ys-pill:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
+.ys-pill:disabled{opacity:.4;cursor:default}
+.ys-pill-lg{height:44px;padding:0 20px;font-size:14px}
+.ys-pill-quiet{
+  color:rgba(255,248,231,.6);background:transparent;border-color:transparent;
+  -webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;
+}
+.ys-pill-quiet:hover:not(:disabled){
+  color:#FFD60A;background:rgba(255,255,255,.05);border-color:transparent;
+}
 .ys-answer{display:flex;flex-direction:column;gap:9px}
-.ys-cancel{margin-top:9px;display:flex;justify-content:flex-end}
+.ys-cancel{margin-top:10px;display:flex;justify-content:flex-end}
 
 .ys-introsave{
   display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:26px;
 }
+
+/* The one filled control on this screen. */
 .ys-btn{
   display:inline-flex;align-items:center;justify-content:center;gap:8px;
   height:44px;padding:0 22px;border-radius:999px;border:0;cursor:pointer;flex:none;
-  background:linear-gradient(180deg,#FFDE3B,#FFC300);color:#1A1200;
-  font-size:14.5px;font-weight:650;letter-spacing:-.014em;
-  box-shadow:0 10px 26px -12px rgba(255,195,0,.85),inset 0 1px 0 rgba(255,255,255,.5);
-  transition:transform 200ms cubic-bezier(.22,1,.36,1),filter 180ms linear;
+  background:linear-gradient(180deg,#FFE45C,#FFC300);color:#1A1200;
+  font-size:15px;font-weight:600;letter-spacing:-.012em;
+  box-shadow:0 8px 24px -10px rgba(255,199,0,.55),inset 0 1px 0 rgba(255,255,255,.45);
+  transition:transform 120ms cubic-bezier(.32,.72,0,1),filter 180ms linear;
   -webkit-tap-highlight-color:transparent;
 }
-.ys-btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.05)}
-.ys-btn:active:not(:disabled){transform:scale(.978)}
-.ys-btn:focus-visible{outline:2px solid #FFF8E7;outline-offset:3px}
+.ys-btn:hover:not(:disabled){filter:brightness(1.04)}
+.ys-btn:active:not(:disabled){transform:scale(.97)}
+.ys-btn:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
 .ys-btn:disabled{
-  background:rgba(255,248,231,.07);color:rgba(255,248,231,.3);
+  background:rgba(255,255,255,.06);color:rgba(255,248,231,.26);
   box-shadow:none;cursor:default;
 }
 .ys-note{
   flex:1 1 150px;min-width:0;margin:0;
-  font-size:11.5px;line-height:1.4;color:rgba(255,248,231,.46);
+  font-size:12.5px;line-height:1.45;color:rgba(255,248,231,.45);
 }
 .ys-note[data-tone="warn"]{color:#FFC300}
 .ys-note[data-tone="good"]{color:rgba(255,214,10,.85)}
 
 /* --- the save bar -------------------------------------------------- */
-/* A floating chip rather than a full-width bar: the frame's gutter belongs to
-   PhoneFrame, and a bar would need a negative-margin bleed to cover it.
-   It pins itself only while there is something to press — a permanent overlay
-   would sit on top of the voice section's own save row for no reason. */
+/* A floating glass pill rather than a full-width bar: the frame's gutter
+   belongs to PhoneFrame, and a bar would need a negative-margin bleed to
+   cover it. It pins itself only while there is something to press — a
+   permanent overlay would sit on top of the voice section's own save row
+   for no reason. */
 .ys-bar{
   position:relative;bottom:0;z-index:4;margin-top:30px;
   display:flex;align-items:center;gap:12px;
-  padding:8px 8px 8px 16px;border-radius:999px;
-  border:1px solid rgba(255,248,231,.09);
-  background:rgba(17,15,11,.88);
-  -webkit-backdrop-filter:blur(18px) saturate(1.25);
-  backdrop-filter:blur(18px) saturate(1.25);
-  box-shadow:0 20px 44px -20px rgba(0,0,0,.98),inset 0 1px 0 rgba(255,248,231,.06);
-  transition:border-color 320ms ease,box-shadow 320ms ease;
+  padding:7px 7px 7px 17px;border-radius:999px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(20,17,10,.70);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);
+  backdrop-filter:blur(20px) saturate(1.4);
+  box-shadow:0 20px 44px -20px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08);
+  transition:border-color 320ms ease;
 }
 .ys-bar[data-pinned="true"]{position:sticky;bottom:14px}
-.ys-bar[data-dirty="true"]{
-  border-color:rgba(255,214,10,.34);
-  box-shadow:0 20px 44px -20px rgba(0,0,0,.98),
-             0 0 30px -14px rgba(255,195,0,.75),
-             inset 0 1px 0 rgba(255,248,231,.06);
+.ys-bar[data-dirty="true"]{border-color:rgba(255,214,10,.3)}
+.ys-bar .ys-btn{height:40px;padding:0 18px;font-size:14px}
+
+/* --- no-backdrop-filter fallback ----------------------------------- */
+@supports not (backdrop-filter: blur(1px)){
+  .ys-rail-top{background:linear-gradient(180deg,rgba(20,17,10,.97) 0%,rgba(20,17,10,.8) 58%,rgba(20,17,10,0) 100%)}
+  .ys-bar{background:rgba(20,17,10,.94)}
+  .ys-gate,.ys-pill,.ys-pill:hover:not(:disabled){background:rgba(60,48,10,.85)}
+  .ys-pill-quiet{background:transparent}
 }
-.ys-bar .ys-btn{height:38px;padding:0 18px;font-size:13.5px}
 
 /* --- gate screen --------------------------------------------------- */
 .ys-loading{
   display:flex;align-items:center;justify-content:center;min-height:60vh;
-  font-size:10px;letter-spacing:.24em;text-transform:uppercase;
-  color:rgba(184,134,11,.75);animation:ys-breathe 1.6s ease-in-out infinite;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(184,134,11,.95);animation:ys-breathe 1.6s ease-in-out infinite;
 }
 
 /* --- keyframes ----------------------------------------------------- */
 @keyframes ys-pop{
-  from{opacity:0;transform:scale(.6) rotate(-12deg)}
-  to{opacity:1;transform:scale(1) rotate(0)}
+  from{opacity:0;transform:scale(.7)}
+  to{opacity:1;transform:scale(1)}
 }
 @keyframes ys-breathe{0%,100%{opacity:.42}50%{opacity:1}}
 @keyframes ys-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.7)}}
 
 @media (prefers-reduced-motion: reduce){
   .ys-face span{animation:none}
-  .ys-node[data-state="todo"],.ys-card-live i,.ys-loading{animation:none}
-  .ys-facebtn:hover,.ys-btn:hover:not(:disabled),.ys-btn:active:not(:disabled){transform:none}
-  .ys-facebtn[aria-checked="true"]{transform:none}
+  .ys-node[data-state="todo"],.ys-card-live i,.ys-loading,
+  .ys-gate-eyebrow i{animation:none}
+  .ys-photo-btn,.ys-photo-veil,.ys-btn,.ys-pill,.ys-input,.ys-textarea,
+  .ys-node,.ys-node i,.ys-bar{transition-duration:1ms}
+  .ys-photo-btn:active:not(:disabled),.ys-btn:active:not(:disabled),
+  .ys-pill:active:not(:disabled){transform:none}
 }
 `}</style>
   );
@@ -638,15 +732,23 @@ export default function SettingsPage() {
   const introUrls = useIntroUrls(clipsForPlayback, ownerId);
 
   const stored = state.me;
-  const view: Draft = {
-    name: draft?.name ?? stored?.name ?? '',
-    emoji: draft?.emoji ?? stored?.emoji ?? AVATARS[0],
-    photoUrl: draft?.photoUrl ?? stored?.photoUrl ?? '',
-    tagline: draft?.tagline ?? stored?.tagline ?? '',
-    bio: draft?.bio ?? stored?.bio ?? '',
-    softSkills: draft?.softSkills ?? stored?.softSkills ?? EMPTY_TAGS,
-    interests: draft?.interests ?? stored?.interests ?? EMPTY_TAGS,
-  };
+  /* Pure derivation of two pieces of state, so memoizing it changes nothing
+     but its identity — and that identity is what `handlePhotoFile`'s dep list
+     hangs off. Without this it is a fresh object every render, which is both
+     what `react-hooks/exhaustive-deps` flags and what stops the compiler
+     preserving the callback's own memoization. */
+  const view: Draft = useMemo(
+    () => ({
+      name: draft?.name ?? stored?.name ?? '',
+      emoji: draft?.emoji ?? stored?.emoji ?? DEFAULT_EMOJI,
+      photoUrl: draft?.photoUrl ?? stored?.photoUrl ?? '',
+      tagline: draft?.tagline ?? stored?.tagline ?? '',
+      bio: draft?.bio ?? stored?.bio ?? '',
+      softSkills: draft?.softSkills ?? stored?.softSkills ?? EMPTY_TAGS,
+      interests: draft?.interests ?? stored?.interests ?? EMPTY_TAGS,
+    }),
+    [draft, stored],
+  );
 
   /* -- nobody edits a profile they never created --------------------- */
 
@@ -1034,7 +1136,6 @@ export default function SettingsPage() {
           className="ys-face"
           aria-hidden="true"
           style={{
-            fontFamily: EMOJI_FACE,
             backgroundImage: view.photoUrl
               ? undefined
               : `radial-gradient(circle at 34% 26%, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 48%), linear-gradient(150deg, ${stored.gradient[0]}, ${stored.gradient[1]})`,
@@ -1043,7 +1144,9 @@ export default function SettingsPage() {
           {view.photoUrl ? (
             <img src={view.photoUrl} alt="" className="ys-face-photo" />
           ) : (
-            <span key={view.emoji}>{view.emoji}</span>
+            <span key={initialsFor(trimmedName)}>
+              <Monogram name={trimmedName} size={60} />
+            </span>
           )}
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -1104,65 +1207,62 @@ export default function SettingsPage() {
           <div className="ys-field">
             <div className="ys-fieldhead">
               <span className="ys-fieldname" style={{ fontFamily: MONO }} id="ys-face-label">
-                Avatar
+                Photo
               </span>
             </div>
-            <div className="ys-faces" role="radiogroup" aria-labelledby="ys-face-label">
-              {AVATARS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  role="radio"
-                  aria-checked={!view.photoUrl && view.emoji === option}
-                  aria-label={`Avatar ${option}`}
-                  className="ys-facebtn"
-                  style={{ fontFamily: EMOJI_FACE }}
-                  onClick={() => setDraft({ ...view, emoji: option, photoUrl: '' })}
-                >
-                  {option}
-                </button>
-              ))}
 
-              <div className="ys-face-wrap">
+            {/* Photo or initials — there is no third option, so there is no
+                picker. The tile is the control: tap to choose or replace. */}
+            <div className="ys-photo-row">
+              <button
+                type="button"
+                className="ys-photo-btn"
+                aria-labelledby="ys-face-label"
+                aria-label={view.photoUrl ? 'Replace your photo' : 'Add a photo'}
+                disabled={photoBusy}
+                onClick={() => photoInputRef.current?.click()}
+                style={{
+                  backgroundImage: view.photoUrl
+                    ? undefined
+                    : `radial-gradient(circle at 34% 26%, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 48%), linear-gradient(150deg, ${stored.gradient[0]}, ${stored.gradient[1]})`,
+                }}
+              >
+                {view.photoUrl ? (
+                  <img src={view.photoUrl} alt="" className="ys-face-img" />
+                ) : photoBusy ? (
+                  <span style={{ fontFamily: MONO, fontSize: 14 }}>···</span>
+                ) : (
+                  <Monogram name={trimmedName} size={76} />
+                )}
+                <span className="ys-photo-veil" aria-hidden="true">
+                  <IconCamera size={24} />
+                </span>
+              </button>
+
+              <div className="ys-photo-acts">
                 <button
                   type="button"
-                  role="radio"
-                  aria-checked={Boolean(view.photoUrl)}
-                  aria-label={view.photoUrl ? 'Your photo. Tap to replace.' : 'Upload a photo'}
-                  className="ys-facebtn"
+                  className="ys-pill"
                   disabled={photoBusy}
                   onClick={() => photoInputRef.current?.click()}
                 >
-                  {view.photoUrl ? (
-                    <img src={view.photoUrl} alt="" className="ys-face-img" />
-                  ) : photoBusy ? (
-                    '…'
-                  ) : (
-                    '📷'
-                  )}
+                  {view.photoUrl ? 'Replace photo' : 'Add a photo'}
                 </button>
                 {view.photoUrl ? (
                   <button
                     type="button"
-                    className="ys-face-clear"
-                    aria-label="Remove photo"
+                    className="ys-pill ys-pill-quiet"
                     onClick={() => setDraft({ ...view, photoUrl: '' })}
                   >
-                    ✕
+                    Remove photo
                   </button>
-                ) : null}
+                ) : (
+                  <p className="ys-hint" style={{ margin: 0 }}>
+                    Until you add one, your initials stand in.
+                  </p>
+                )}
               </div>
             </div>
-            <p
-              style={{
-                margin: '9px 0 0',
-                fontSize: 11.5,
-                lineHeight: 1.4,
-                color: 'rgba(255,248,231,.4)',
-              }}
-            >
-              Tap the camera to add your own photo instead of an emoji.
-            </p>
             <input
               ref={photoInputRef}
               type="file"
@@ -1297,6 +1397,7 @@ export default function SettingsPage() {
         ) : (
           <div className="ys-gate">
             <span className="ys-gate-eyebrow" style={{ fontFamily: MONO }}>
+              <i aria-hidden="true" />
               Not recorded yet
             </span>
             <h3 className="ys-gate-title">Nobody can connect with you yet.</h3>
@@ -1322,8 +1423,7 @@ export default function SettingsPage() {
                 {stored && !isEditing ? (
                   <button
                     type="button"
-                    className="ys-ghost"
-                    style={{ fontFamily: MONO }}
+                    className="ys-pill"
                     disabled={savingIntro}
                     onClick={() => setEditing((current) => [...current, question.key])}
                   >
@@ -1344,8 +1444,7 @@ export default function SettingsPage() {
                     <div className="ys-cancel">
                       <button
                         type="button"
-                        className="ys-ghost"
-                        style={{ fontFamily: MONO }}
+                        className="ys-pill ys-pill-quiet"
                         disabled={savingIntro}
                         onClick={() => {
                           setEditing((current) =>
@@ -1379,7 +1478,7 @@ export default function SettingsPage() {
           <div className="ys-introsave">
             <button
               type="button"
-              className="ys-btn"
+              className="ys-pill ys-pill-lg"
               disabled={!introDirty || savingIntro}
               onClick={() => void handleSaveIntro()}
             >

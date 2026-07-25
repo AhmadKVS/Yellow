@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { initialsFor } from '@/lib/initials';
 import { useAppState, type Notice } from '@/lib/store';
 
 const SANS =
@@ -12,8 +13,6 @@ const MONO =
 
 const DISMISS_MS = 6_000;
 const EXIT_MS = 260;
-
-const FALLBACK_GRADIENT: [string, string] = ['#FFD860', '#B8860B'];
 
 function ToastStyles() {
   return (
@@ -30,14 +29,15 @@ function ToastStyles() {
 }
 .y-toast-card{
   position:relative; pointer-events:auto; width:100%; max-width:420px;
-  border-radius:20px; border:1px solid rgba(255,214,10,.16);
-  background-image:
-    radial-gradient(120% 100% at 24% 0%, rgba(255,195,0,.13) 0%, rgba(255,195,0,0) 64%),
-    linear-gradient(180deg, rgba(28,24,14,.94) 0%, rgba(14,12,8,.95) 100%);
-  backdrop-filter:blur(16px) saturate(1.1);
-  -webkit-backdrop-filter:blur(16px) saturate(1.1);
-  box-shadow:0 24px 60px -22px rgba(0,0,0,.92), inset 0 1px 0 rgba(255,214,10,.24);
-  animation:y-toast-in-up 520ms cubic-bezier(.18,1.16,.32,1) both;
+  border-radius:22px; border:1px solid var(--glass-hairline);
+  background:var(--glass-chrome);
+  backdrop-filter:var(--glass-chrome-filter);
+  -webkit-backdrop-filter:var(--glass-chrome-filter);
+  box-shadow:
+    0 20px 48px -18px rgba(0,0,0,.8),
+    0 2px 8px -3px rgba(0,0,0,.6),
+    inset 0 1px 0 rgba(255,255,255,.09);
+  animation:y-toast-in-up 520ms cubic-bezier(.32,.72,0,1) both;
   will-change:transform;
 }
 .y-toast-card[data-leaving="true"]{
@@ -57,19 +57,37 @@ function ToastStyles() {
 }
 .y-toast-link{
   display:flex; gap:12px; align-items:flex-start;
-  padding:13px 42px 13px 13px; border-radius:20px; text-decoration:none;
-  transition:background-color 200ms linear;
+  padding:13px 42px 13px 13px; border-radius:22px; text-decoration:none;
+  transition:background-color 200ms cubic-bezier(.32,.72,0,1);
 }
-.y-toast-link:hover{ background-color:rgba(255,214,10,.05) }
+.y-toast-link:hover{ background-color:rgba(255,255,255,.045) }
 .y-toast-link:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
+/* Yellow-glass disc so the person reads the same here as on the bubble map. */
 .y-toast-face{
   flex-shrink:0; width:42px; height:42px; border-radius:9999px;
-  display:flex; align-items:center; justify-content:center; font-size:20px;
-  box-shadow:0 0 18px -2px rgba(255,214,10,.32), inset 0 2px 0 rgba(255,255,255,.34);
+  display:flex; align-items:center; justify-content:center;
+  background:var(--glass-yellow);
+  -webkit-backdrop-filter:var(--glass-yellow-filter);
+  backdrop-filter:var(--glass-yellow-filter);
+  color:#FFF8E7; font-weight:600; letter-spacing:.02em; line-height:1;
+  box-shadow:
+    inset 0 0 0 1px var(--glass-hairline),
+    var(--glass-top-light),
+    0 4px 12px -6px rgba(0,0,0,.7);
+}
+/* ~40% of the disc for one letter, ~32% for two. */
+.y-toast-face[data-mono="1"]{ font-size:17px }
+.y-toast-face[data-mono="2"]{ font-size:13.5px }
+/* A photo is full-bleed; only the hairline rim survives on top of it. */
+.y-toast-face[data-photo="true"]{
+  background-color:#1A1200; background-size:cover; background-position:center;
+  -webkit-backdrop-filter:none; backdrop-filter:none;
+  box-shadow:inset 0 0 0 1px var(--glass-hairline);
 }
 .y-toast-eyebrow{
   display:flex; align-items:center; gap:6px; margin:1px 0 5px;
-  font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:#FFD60A;
+  font-size:10.5px; font-weight:500; letter-spacing:.14em;
+  text-transform:uppercase; color:rgba(184,134,11,.92);
 }
 .y-toast-live{
   width:5px; height:5px; border-radius:9999px; flex-shrink:0;
@@ -81,23 +99,23 @@ function ToastStyles() {
   50%    { opacity:1;   transform:scale(1) }
 }
 .y-toast-title{
-  display:block; margin:0; font-size:14.5px; font-weight:600; line-height:1.35;
-  letter-spacing:-.014em; color:#FFF8E7;
+  display:block; margin:0; font-size:15px; font-weight:600; line-height:1.34;
+  letter-spacing:-.016em; color:#FFF8E7;
 }
 .y-toast-body{
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
-  margin:3px 0 0; font-size:12.5px; line-height:1.45; letter-spacing:-.004em;
-  color:rgba(255,248,231,.52);
+  margin:3px 0 0; font-size:13px; line-height:1.45; letter-spacing:-.006em;
+  color:rgba(255,248,231,.56);
 }
 .y-toast-x{
   position:absolute; top:8px; right:8px; z-index:1;
   display:flex; align-items:center; justify-content:center;
-  width:26px; height:26px; border:0; border-radius:9999px; cursor:pointer;
-  background:transparent; font-size:12px; line-height:1;
-  color:rgba(255,248,231,.4);
+  width:28px; height:28px; border:0; border-radius:9999px; cursor:pointer;
+  background:transparent; line-height:0;
+  color:rgba(255,248,231,.42);
   transition:color 180ms linear, background-color 180ms linear;
 }
-.y-toast-x:hover{ color:#FFF8E7; background-color:rgba(255,248,231,.08) }
+.y-toast-x:hover{ color:#FFF8E7; background-color:rgba(255,255,255,.07) }
 .y-toast-x:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
 @media (min-width:768px){
   .y-toast-root,
@@ -141,12 +159,16 @@ function ToastCard({ notice, onClose }: { notice: Notice; onClose: () => void })
   const person = people.find((p) => p.id === notice.personId);
   // A real connection must never go unannounced because the directory poll lagged.
   const firstName = (person?.name ?? '').trim().split(/\s+/)[0] || 'Someone';
-  const gradient = person?.gradient ?? FALLBACK_GRADIENT;
   const preview = pairs.find((p) => p.personId === notice.personId)?.lastMessagePreview;
 
   const connected = notice.kind === 'connected';
   const title = connected ? "You're connected!" : `${firstName} sent you a message`;
   const body = connected ? `You and ${firstName} both went first.` : (preview ?? '');
+
+  // Photo → monogram. The stored `emoji` stays in the data and out of the UI.
+  const photo = person?.photoUrl;
+  const usePhoto = typeof photo === 'string' && /^https?:\/\//.test(photo);
+  const monogram = initialsFor(person?.name);
 
   return (
     <div className="y-toast-root" data-composer={pathname.startsWith('/chat/')}>
@@ -157,11 +179,11 @@ function ToastCard({ notice, onClose }: { notice: Notice; onClose: () => void })
           <span
             aria-hidden="true"
             className="y-toast-face"
-            style={{
-              background: `radial-gradient(circle at 32% 28%, ${gradient[0]}, ${gradient[1]})`,
-            }}
+            data-photo={usePhoto || undefined}
+            data-mono={usePhoto ? undefined : monogram.length}
+            style={usePhoto ? { backgroundImage: `url(${JSON.stringify(photo)})` } : undefined}
           >
-            {person?.emoji ?? '\u{1F44B}'}
+            {usePhoto ? '' : monogram}
           </span>
 
           <span style={{ minWidth: 0, flex: 1 }}>
@@ -186,7 +208,20 @@ function ToastCard({ notice, onClose }: { notice: Notice; onClose: () => void })
           onClick={() => setLeaving(true)}
           aria-label="Dismiss notification"
         >
-          <span aria-hidden="true">&#10005;</span>
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M5.5 5.5 18.5 18.5M18.5 5.5 5.5 18.5" />
+          </svg>
         </button>
       </div>
     </div>

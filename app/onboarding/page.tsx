@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'next/navigation';
 import TagEditor, { type TagGroups } from '@/components/TagEditor';
 import { extractTags } from '@/lib/extract';
+import { initialsFor } from '@/lib/initials';
 import { resolveIdentity } from '@/lib/people';
 import { rejectPhoto, uploadPhoto } from '@/lib/photoClient';
 import { useAppState } from '@/lib/store';
@@ -24,8 +25,6 @@ const SANS =
   'var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 const MONO =
   'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace';
-const EMOJI_FACE =
-  '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
 
 const MIN_CHARS = 40;
 const MAX_CHARS = 900;
@@ -37,40 +36,10 @@ const STEP_SWAP_MS = 190;
 
 const MY_GRADIENT: [string, string] = ['#FFD60A', '#FF8A00'];
 
-/* Deliberately disjoint from the seed personas' emoji so a new user never
-   reads as a duplicate of someone already floating in the bubble map. */
-const AVATARS = [
-  '🐝',
-  '🍋',
-  '🌞',
-  '🚀',
-  '🔥',
-  '🪐',
-  '☕',
-  '🧭',
-  '🎧',
-  '🦊',
-  '🌊',
-  '🏔️',
-];
-
-const EXAMPLES = [
-  {
-    emoji: '🧪',
-    title: 'The teacher',
-    text: "I taught middle-school science for nine years, then quit to build a tutoring app for the kids who quietly fall through the cracks. I'm stubborn about the ones everyone else has given up on, and I'm happiest explaining something over and over until it finally clicks. Weekends I cook for far too many people.",
-  },
-  {
-    emoji: '🔩',
-    title: 'The tinkerer',
-    text: "Ex-warehouse ops, self-taught engineer. I build unglamorous robotics that make physical work less brutal on people's bodies. I prototype fast and badly, then fix it. Most of my week is user interviews on factory floors, which is where all the good ideas actually come from. I run to think.",
-  },
-  {
-    emoji: '📮',
-    title: 'The convener',
-    text: 'I write a newsletter about climate finance that somehow turned into a four-thousand-person community. Honestly I care more about getting those people talking to each other than about the writing. Right now I am raising a small round and quietly terrified about it. Ask me about my sourdough.',
-  },
-];
+/* Avatars are photo-or-monogram now. `Profile.emoji` is still a required
+   field on the frozen contract, so every profile carries this placeholder —
+   it is written, never rendered. */
+const DEFAULT_AVATAR_EMOJI = '🟡';
 
 /* Deliberately never repeats the headline — the h1 is the stable frame,
    this line is the part that reads as live progress. */
@@ -95,6 +64,62 @@ const srOnly: CSSProperties = {
   whiteSpace: 'nowrap',
   border: 0,
 };
+
+/* ------------------------------------------------------------------ */
+/* Chrome glyphs — inline SVG, stroke 1.8, round caps. No emoji here.  */
+/* ------------------------------------------------------------------ */
+
+function CameraGlyph() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect
+        x="2.5"
+        y="6.4"
+        width="15"
+        height="9.6"
+        rx="2.6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M7.3 6.4 8.5 4.2h3l1.2 2.2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="10" cy="11.2" r="2.6" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function SpinnerGlyph() {
+  return (
+    <svg
+      className="yo-spin"
+      width="18"
+      height="18"
+      viewBox="0 0 18 18"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle
+        cx="9"
+        cy="9"
+        r="6.8"
+        stroke="currentColor"
+        strokeOpacity="0.25"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M15.8 9A6.8 6.8 0 0 0 9 2.2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -164,31 +189,38 @@ function OnboardingStyles() {
    pins its rail/footer with sticky rather than a fixed-height column. */
 .yo-root{display:flex;flex-direction:column;min-height:100dvh;position:relative}
 
-/* --- rail ------------------------------------------------------- */
+/* --- rail: a floating layer, so chrome glass is the right material -
+       The material lives on ::before so the mask can fade the blur out
+       with the fill (no hard edge across the column) without fading the
+       wordmark and step words sitting on top of it. */
 .yo-rail{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
-  padding:18px 0 16px;flex:none;position:sticky;top:0;z-index:3;
-  /* Glass rather than a flat fill: an opaque band would read as a hard
-     rectangle against the frame's ambient glow in the desktop gutters. */
-  background:linear-gradient(180deg,rgba(11,10,8,.9) 0%,rgba(11,10,8,.72) 55%,rgba(11,10,8,0) 100%);
-  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  padding:20px 0 14px;flex:none;position:sticky;top:0;z-index:3;
 }
-.yo-mark{display:flex;align-items:center;gap:7px}
-.yo-dot{
-  width:9px;height:9px;border-radius:999px;background:#FFD60A;
-  box-shadow:0 0 12px rgba(255,214,10,.85);
+/* Two mask layers, intersected: the vertical one fades the band into the
+   column, the horizontal one dissolves its left/right edges so the glass
+   never reads as a lighter rectangle floating on the canvas. */
+.yo-rail::before{
+  content:'';position:absolute;left:-18px;right:-18px;top:0;bottom:-22px;z-index:-1;
+  pointer-events:none;background:rgba(20,17,10,.70);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-mask-image:linear-gradient(180deg,#000 0%,#000 56%,transparent 100%),
+                     linear-gradient(90deg,transparent 0%,#000 12%,#000 88%,transparent 100%);
+  mask-image:linear-gradient(180deg,#000 0%,#000 56%,transparent 100%),
+             linear-gradient(90deg,transparent 0%,#000 12%,#000 88%,transparent 100%);
+  -webkit-mask-composite:source-in;mask-composite:intersect;
 }
-.yo-wordmark{
-  font-size:13.5px;font-weight:600;letter-spacing:-.02em;color:#FFF8E7;
-}
-.yo-steps{display:flex;align-items:center;gap:7px}
+.yo-mark{display:flex;align-items:center;gap:8px}
+.yo-dot{width:8px;height:8px;border-radius:999px;background:#FFD60A;flex:none}
+.yo-wordmark{font-size:15px;font-weight:600;letter-spacing:-.02em;color:#FFF8E7}
+.yo-steps{display:flex;align-items:center;gap:8px}
 .yo-step{
-  font-size:9px;letter-spacing:.2em;text-transform:uppercase;
-  color:rgba(184,134,11,.45);transition:color 420ms ease;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(255,248,231,.26);transition:color 420ms cubic-bezier(.32,.72,0,1);
 }
-.yo-step[data-state="done"]{color:rgba(184,134,11,.95)}
-.yo-step[data-state="now"]{color:#FFD60A;text-shadow:0 0 14px rgba(255,214,10,.5)}
-.yo-tick{width:9px;height:1px;background:rgba(184,134,11,.35)}
+.yo-step[data-state="done"]{color:rgba(184,134,11,.9)}
+.yo-step[data-state="now"]{color:#FFD60A}
+.yo-tick{width:10px;height:1px;background:rgba(255,255,255,.14);flex:none}
 
 /* --- content ---------------------------------------------------- */
 .yo-body{flex:1;min-width:0;padding:6px 0 24px}
@@ -201,43 +233,45 @@ function OnboardingStyles() {
 /* fill-mode is 'backwards', not 'both': once the entrance has played the
    element must hand opacity/transform back so the exit transition can win. */
 .yo-stage{
-  animation:yo-rise 400ms cubic-bezier(.22,1,.36,1) backwards;
+  animation:yo-rise 400ms cubic-bezier(.32,.72,0,1) backwards;
   transition:opacity ${STEP_SWAP_MS}ms ease, transform ${STEP_SWAP_MS}ms ease;
 }
 .yo-stage[data-phase="out"]{opacity:0;transform:translateY(-14px)}
 
-/* --- type ------------------------------------------------------- */
+/* --- type ladder ------------------------------------------------- */
 .yo-eyebrow{
-  font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:#B8860B;
-  margin-bottom:14px;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:#B8860B;margin:0 0 12px;
 }
 .yo-h1{
-  font-size:clamp(30px,8.4vw,41px);font-weight:600;letter-spacing:-.04em;
-  line-height:1.03;color:#FFF8E7;margin:0;text-wrap:balance;
+  font-size:clamp(26px,7.2vw,30px);font-weight:700;letter-spacing:-.03em;
+  line-height:1.1;color:#FFF8E7;margin:0;text-wrap:balance;
 }
 .yo-h1 em{font-style:normal;color:#FFD60A}
 .yo-sub{
-  font-size:14.5px;line-height:1.55;color:rgba(255,248,231,.55);
-  margin:15px 0 0;max-width:34ch;text-wrap:pretty;
+  font-size:15px;line-height:1.5;color:rgba(255,248,231,.62);
+  margin:12px 0 0;max-width:36ch;text-wrap:pretty;
 }
 
-/* --- textarea --------------------------------------------------- */
+/* --- textarea: an inset card, hairline stroke, yellow on focus ---- */
 .yo-field{
-  position:relative;margin-top:26px;padding-left:14px;
-  border-radius:4px 16px 16px 4px;background:rgba(255,248,231,.035);
-  transition:background 260ms ease;
+  position:relative;margin-top:24px;border-radius:18px;
+  background:rgba(255,255,255,.045);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),
+             inset 0 1px 0 rgba(255,255,255,.05),
+             0 10px 30px -12px rgba(0,0,0,.6);
+  transition:background 260ms cubic-bezier(.32,.72,0,1),
+             box-shadow 260ms cubic-bezier(.32,.72,0,1);
 }
-.yo-field::before{
-  content:'';position:absolute;left:0;top:0;bottom:0;width:2px;border-radius:999px;
-  background:rgba(184,134,11,.42);transition:background 260ms ease,box-shadow 260ms ease;
-}
-.yo-field:focus-within{background:rgba(255,214,10,.05)}
-.yo-field:focus-within::before{
-  background:#FFD60A;box-shadow:0 0 16px rgba(255,214,10,.75);
+.yo-field:focus-within{
+  background:rgba(255,214,10,.07);
+  box-shadow:inset 0 0 0 1px rgba(255,214,10,.42),
+             inset 0 1px 0 rgba(255,255,255,.05),
+             0 10px 30px -12px rgba(0,0,0,.6);
 }
 .yo-ta{
-  display:block;width:100%;min-height:152px;resize:none;border:0;background:transparent;
-  padding:16px 16px 16px 4px;
+  display:block;width:100%;min-height:158px;resize:none;border:0;background:transparent;
+  padding:17px 18px;
   color:#FFF8E7;font-size:15.5px;line-height:1.62;letter-spacing:-.011em;
 }
 .yo-ta:focus{outline:none}
@@ -245,174 +279,192 @@ function OnboardingStyles() {
 
 .yo-meter{
   display:flex;align-items:baseline;justify-content:space-between;gap:12px;
-  margin-top:11px;
+  margin-top:11px;padding:0 2px;
 }
-.yo-hint{font-size:12.5px;color:rgba(255,248,231,.42);transition:color 300ms ease}
-.yo-hint[data-ready="true"]{color:rgba(255,214,10,.82)}
+.yo-hint{font-size:13.5px;color:rgba(255,248,231,.40);transition:color 300ms ease}
+.yo-hint[data-ready="true"]{color:rgba(255,214,10,.9)}
 .yo-num{
-  font-size:10px;letter-spacing:.12em;color:rgba(184,134,11,.75);
+  font-size:12.5px;font-weight:500;letter-spacing:.08em;color:rgba(255,248,231,.40);
   font-variant-numeric:tabular-nums;flex:none;
 }
 
-/* --- example blurbs --------------------------------------------- */
-.yo-seclabel{
-  display:flex;align-items:center;gap:10px;margin:30px 0 12px;
-  font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:#B8860B;
-}
-.yo-seclabel::after{
-  content:'';flex:1;height:1px;
-  background:linear-gradient(90deg,rgba(184,134,11,.4),rgba(184,134,11,0));
-}
-.yo-ex{
-  display:flex;align-items:flex-start;gap:12px;width:100%;text-align:left;
-  padding:12px 14px;margin-bottom:8px;cursor:pointer;
-  border:1px solid rgba(184,134,11,.24);border-radius:14px;background:transparent;
-  transition:border-color 200ms ease,background 200ms ease,transform 200ms ease;
-  -webkit-tap-highlight-color:transparent;
-}
-.yo-ex:hover{border-color:rgba(255,214,10,.6);background:rgba(255,214,10,.05)}
-.yo-ex:active{transform:scale(.985)}
-.yo-ex:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
-.yo-ex-emoji{font-size:17px;line-height:1.35;flex:none}
-.yo-ex-title{font-size:13.5px;font-weight:600;color:#FFF8E7;letter-spacing:-.012em}
-.yo-ex-peek{
-  font-size:12px;line-height:1.45;color:rgba(255,248,231,.4);margin-top:3px;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
-}
-
-/* --- reading step ----------------------------------------------- */
+/* --- reading step: the beam is this screen's one glow ------------- */
 .yo-scan{
-  position:relative;margin-top:30px;padding:20px 18px;overflow:hidden;
-  border-radius:18px;border:1px solid rgba(184,134,11,.26);
-  background:rgba(255,248,231,.03);
+  position:relative;margin-top:28px;padding:20px 18px;overflow:hidden;
+  border-radius:18px;background:rgba(255,255,255,.045);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),
+             inset 0 1px 0 rgba(255,255,255,.05),
+             0 10px 30px -12px rgba(0,0,0,.6);
 }
 .yo-scan-text{
-  font-size:13.5px;line-height:2.05;color:rgba(255,248,231,.42);
+  font-size:13.5px;line-height:2.05;color:rgba(255,248,231,.40);
   letter-spacing:-.008em;margin:0;
   display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;
 }
 .yo-beam{
-  position:absolute;left:0;right:0;top:0;height:64%;pointer-events:none;
+  position:absolute;left:0;right:0;top:0;height:58%;pointer-events:none;
+  will-change:transform;
   background:linear-gradient(180deg,
     rgba(255,214,10,0) 0%,
-    rgba(255,214,10,.05) 34%,
-    rgba(255,214,10,.16) 48%,
-    rgba(255,214,10,.05) 62%,
+    rgba(255,214,10,.035) 38%,
+    rgba(255,214,10,.14) 50%,
+    rgba(255,214,10,.035) 62%,
     rgba(255,214,10,0) 100%);
-  animation:yo-sweep 1.55s cubic-bezier(.55,0,.45,1) infinite;
+  animation:yo-sweep 1.5s cubic-bezier(.55,0,.45,1) infinite;
 }
 .yo-beam::after{
-  content:'';position:absolute;left:8%;right:8%;top:50%;height:1px;
-  background:linear-gradient(90deg,rgba(255,214,10,0),rgba(255,214,10,.95),rgba(255,214,10,0));
-  box-shadow:0 0 12px rgba(255,214,10,.8);
+  content:'';position:absolute;left:6%;right:6%;top:50%;height:1px;
+  background:linear-gradient(90deg,rgba(255,214,10,0),#FFE45C 22%,#FFE45C 78%,rgba(255,214,10,0));
+  box-shadow:0 0 14px rgba(255,214,10,.85);
 }
 .yo-status{
-  display:flex;align-items:center;gap:9px;margin-top:22px;
-  font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#FFD60A;
+  display:flex;align-items:center;gap:9px;margin:22px 0 0;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:#FFD60A;
 }
 .yo-pip{
   width:6px;height:6px;border-radius:999px;background:#FFD60A;flex:none;
   animation:yo-pip 1.15s ease-in-out infinite;
 }
 .yo-statusline{animation:yo-fade 360ms ease backwards}
-.yo-ghosts{display:flex;flex-wrap:wrap;gap:7px;margin-top:26px}
+.yo-ghosts{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px}
+/* Clear glass, so the tags-to-be read as forming rather than as holes. */
 .yo-ghost{
-  height:31px;border-radius:999px;background:rgba(255,214,10,.09);
-  animation:yo-breathe 1.5s ease-in-out infinite;animation-delay:var(--yo-d,0ms);
+  height:32px;border-radius:999px;background:rgba(255,255,255,.06);
+  -webkit-backdrop-filter:blur(16px) saturate(1.3);backdrop-filter:blur(16px) saturate(1.3);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.10),inset 0 1px 0 rgba(255,255,255,.06);
+  animation:yo-breathe 1.6s ease-in-out infinite;animation-delay:var(--yo-d,0ms);
 }
 
-/* --- confirm step ----------------------------------------------- */
+/* --- confirm step ------------------------------------------------ */
+.yo-confirmhead{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-bottom:12px;
+}
 .yo-source{
-  display:inline-flex;align-items:center;gap:6px;margin-top:16px;
-  padding:4px 10px;border-radius:999px;border:1px solid rgba(184,134,11,.3);
-  font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:rgba(184,134,11,.95);
+  display:inline-flex;align-items:center;gap:6px;margin:16px 0 0;
+  height:26px;padding:0 11px;border-radius:999px;
+  background:linear-gradient(180deg,rgba(255,214,10,.16),rgba(255,214,10,.12)),rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.22);
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:#FFD60A;
 }
-.yo-divider{
-  height:1px;margin:32px 0;
-  background:linear-gradient(90deg,rgba(184,134,11,.34),rgba(184,134,11,0));
-}
+.yo-divider{height:1px;margin:32px 0;background:rgba(255,255,255,.08)}
 .yo-name{
-  width:100%;height:48px;padding:0 16px;
-  background:rgba(255,248,231,.045);border:1px solid rgba(184,134,11,.3);
-  border-radius:14px;color:#FFF8E7;font-size:16px;letter-spacing:-.015em;font-weight:500;
-  transition:border-color 220ms ease,background 220ms ease;
+  width:100%;height:50px;padding:0 16px;border:0;border-radius:14px;
+  background:rgba(255,255,255,.045);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),inset 0 1px 0 rgba(255,255,255,.05);
+  color:#FFF8E7;font-size:16px;letter-spacing:-.015em;font-weight:500;
+  transition:background 220ms cubic-bezier(.32,.72,0,1),
+             box-shadow 220ms cubic-bezier(.32,.72,0,1);
 }
-.yo-name::placeholder{color:rgba(255,248,231,.28);font-weight:400}
-.yo-name:focus{outline:none;border-color:rgba(255,214,10,.75);background:rgba(255,214,10,.05)}
+.yo-name::placeholder{color:rgba(255,248,231,.26);font-weight:400}
+.yo-name:focus{
+  outline:none;background:rgba(255,214,10,.07);
+  box-shadow:inset 0 0 0 1px rgba(255,214,10,.42),inset 0 1px 0 rgba(255,255,255,.05);
+}
 
-/* Capped so the tiles stay a consistent ~56-62px at every column width
-   instead of ballooning into 80px slabs on desktop. */
-.yo-faces{
-  display:grid;grid-template-columns:repeat(6,1fr);gap:9px;margin-top:12px;max-width:404px;
-}
-.yo-face{
-  aspect-ratio:1;display:flex;align-items:center;justify-content:center;
-  border-radius:16px;border:1px solid rgba(184,134,11,.24);background:transparent;
-  font-size:clamp(20px,4.6vw,26px);cursor:pointer;
-  transition:border-color 200ms ease,background 200ms ease,transform 200ms cubic-bezier(.22,1,.36,1);
+/* --- identity: photo, else an Apple-Contacts initials monogram ---- */
+.yo-identity{display:flex;align-items:center;gap:14px;margin-top:14px}
+.yo-avatar{
+  position:relative;flex:none;width:72px;height:72px;border-radius:999px;padding:0;border:0;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;
+  background:linear-gradient(180deg,rgba(255,214,10,.16),rgba(255,214,10,.12)),rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.22);
+  color:rgba(255,248,231,.55);
+  transition:box-shadow 200ms cubic-bezier(.32,.72,0,1),
+             transform 120ms cubic-bezier(.32,.72,0,1);
   -webkit-tap-highlight-color:transparent;
 }
-.yo-face:hover{border-color:rgba(255,214,10,.55);transform:translateY(-2px)}
-.yo-face:active{transform:scale(.9)}
-.yo-face:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
-.yo-face[aria-checked="true"]{
-  border-color:#FFD60A;background:rgba(255,214,10,.15);
-  box-shadow:0 0 0 1px #FFD60A inset,0 0 20px rgba(255,214,10,.3);
-  transform:translateY(-2px) scale(1.04);
+.yo-avatar:hover:not(:disabled){
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.24),inset 0 1px 0 rgba(255,255,255,.28);
 }
-.yo-face-wrap{position:relative;aspect-ratio:1}
-.yo-face-wrap .yo-face{width:100%;height:100%;aspect-ratio:auto;font-size:17px;overflow:hidden}
-.yo-face-img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
-.yo-face-clear{
-  position:absolute;top:-5px;right:-5px;width:18px;height:18px;padding:0;
-  display:flex;align-items:center;justify-content:center;border-radius:999px;cursor:pointer;
-  border:1px solid rgba(255,214,10,.5);background:#100E09;color:#FFF8E7;font-size:9px;
-  -webkit-tap-highlight-color:transparent;
+.yo-avatar:active:not(:disabled){transform:scale(.96)}
+.yo-avatar:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
+/* A photo is its own material — flat rim, no tint under it. */
+.yo-avatar[data-photo="true"]{
+  background:rgba(255,255,255,.045);
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);
 }
-.yo-face-clear:hover{border-color:#FFD60A;color:#FFD60A}
-.yo-photo-err{margin:8px 0 0;font-size:11.5px;color:#FFC300}
+.yo-mono{
+  color:#FFF8E7;font-weight:600;letter-spacing:.02em;line-height:1;
+  transition:font-size 200ms cubic-bezier(.32,.72,0,1);
+}
+.yo-avatar-img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.yo-identity-copy{flex:1;min-width:0}
+.yo-identity-line{
+  margin:0;font-size:13.5px;line-height:1.45;color:rgba(255,248,231,.62);
+}
+.yo-photorow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:2px}
+.yo-photobtn{
+  display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 2px;
+  border:0;background:transparent;cursor:pointer;
+  font-size:13.5px;font-weight:500;letter-spacing:-.01em;color:#FFD60A;
+  transition:color 180ms ease;-webkit-tap-highlight-color:transparent;
+}
+.yo-photobtn[data-quiet="true"]{color:rgba(255,248,231,.62)}
+.yo-photobtn:hover:not(:disabled){color:#FFE45C}
+.yo-photobtn[data-quiet="true"]:hover:not(:disabled){color:#FFD60A}
+.yo-photobtn:disabled{color:rgba(255,248,231,.26);cursor:default}
+.yo-photobtn:focus-visible{outline:2px solid #FFD60A;outline-offset:2px;border-radius:10px}
+.yo-photo-err{margin:8px 0 0;font-size:12.5px;line-height:1.45;color:#FFCFA6}
 
 /* --- footer ----------------------------------------------------- */
 .yo-foot{
   flex:none;position:sticky;bottom:0;z-index:2;
-  padding:18px 0 calc(18px + env(safe-area-inset-bottom,0px));
-  background:linear-gradient(180deg,rgba(11,10,8,0) 0%,rgba(11,10,8,.72) 38%,rgba(11,10,8,.9) 100%);
-  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  padding:16px 0 calc(18px + env(safe-area-inset-bottom,0px));
 }
+.yo-foot::before{
+  content:'';position:absolute;left:-18px;right:-18px;top:-26px;bottom:0;z-index:-1;
+  pointer-events:none;background:rgba(20,17,10,.70);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-mask-image:linear-gradient(180deg,transparent 0%,#000 46%,#000 100%),
+                     linear-gradient(90deg,transparent 0%,#000 12%,#000 88%,transparent 100%);
+  mask-image:linear-gradient(180deg,transparent 0%,#000 46%,#000 100%),
+             linear-gradient(90deg,transparent 0%,#000 12%,#000 88%,transparent 100%);
+  -webkit-mask-composite:source-in;mask-composite:intersect;
+}
+/* The one filled pill, and the one glow, per step. */
 .yo-cta{
   display:flex;align-items:center;justify-content:center;gap:9px;
-  width:100%;height:52px;border:0;border-radius:999px;cursor:pointer;
-  background:linear-gradient(180deg,#FFDE3B,#FFC300);color:#0B0A08;
-  font-size:15.5px;font-weight:650;letter-spacing:-.015em;
-  box-shadow:0 6px 26px rgba(255,195,0,.3),inset 0 1px 0 rgba(255,255,255,.5);
-  transition:transform 200ms cubic-bezier(.22,1,.36,1),box-shadow 200ms ease,opacity 200ms ease;
+  width:100%;height:50px;border:0;border-radius:999px;cursor:pointer;
+  background:linear-gradient(180deg,#FFE45C,#FFC300);color:#1A1200;
+  font-size:15px;font-weight:600;letter-spacing:-.01em;
+  box-shadow:0 8px 24px -10px rgba(255,199,0,.55),inset 0 1px 0 rgba(255,255,255,.45);
+  transition:transform 120ms cubic-bezier(.32,.72,0,1),box-shadow 200ms ease,
+             background 200ms ease;
   -webkit-tap-highlight-color:transparent;
 }
-.yo-cta:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 10px 34px rgba(255,195,0,.44),inset 0 1px 0 rgba(255,255,255,.5)}
-.yo-cta:active:not(:disabled){transform:scale(.978)}
-.yo-cta:focus-visible{outline:2px solid #FFD60A;outline-offset:3px}
+.yo-cta:hover:not(:disabled){
+  box-shadow:0 12px 30px -10px rgba(255,199,0,.72),inset 0 1px 0 rgba(255,255,255,.45);
+}
+.yo-cta:active:not(:disabled){transform:scale(.97)}
+.yo-cta:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
 .yo-cta:disabled{
-  background:rgba(255,248,231,.07);color:rgba(255,248,231,.3);
+  background:rgba(255,255,255,.055);color:rgba(255,248,231,.26);
   box-shadow:none;cursor:default;
 }
 .yo-footnote{
-  margin:10px 0 0;text-align:center;font-size:11px;color:rgba(255,248,231,.34);
+  margin:10px 0 0;text-align:center;font-size:12.5px;color:rgba(255,248,231,.40);
   min-height:1em;
 }
 .yo-back{
-  border:0;background:transparent;cursor:pointer;padding:2px 0;
-  font-size:9px;letter-spacing:.18em;text-transform:uppercase;
-  color:rgba(184,134,11,.9);
-  transition:color 180ms ease;
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:44px;padding:0 4px;border:0;background:transparent;cursor:pointer;
+  font-size:13.5px;font-weight:500;letter-spacing:-.01em;color:rgba(255,248,231,.62);
+  transition:color 180ms ease;-webkit-tap-highlight-color:transparent;
 }
 .yo-back:hover{color:#FFD60A}
-.yo-back:focus-visible{outline:2px solid #FFD60A;outline-offset:2px}
+.yo-back:focus-visible{outline:2px solid #FFD60A;outline-offset:2px;border-radius:10px}
 
 /* --- gate ------------------------------------------------------- */
 .yo-gate{
   flex:1;display:flex;align-items:center;justify-content:center;
-  font-size:10px;letter-spacing:.24em;text-transform:uppercase;
-  color:rgba(184,134,11,.7);animation:yo-breathe 1.5s ease-in-out infinite;
+  font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(184,134,11,.8);animation:yo-breathe 1.6s ease-in-out infinite;
 }
 
 /* --- keyframes --------------------------------------------------- */
@@ -422,8 +474,8 @@ function OnboardingStyles() {
 }
 @keyframes yo-fade{from{opacity:0}to{opacity:1}}
 @keyframes yo-sweep{
-  0%{transform:translateY(-105%)}
-  100%{transform:translateY(215%)}
+  0%{transform:translateY(-108%)}
+  100%{transform:translateY(220%)}
 }
 @keyframes yo-pip{
   0%,100%{opacity:1;transform:scale(1)}
@@ -433,12 +485,24 @@ function OnboardingStyles() {
   0%,100%{opacity:.4}
   50%{opacity:.95}
 }
+@keyframes yo-spin{to{transform:rotate(360deg)}}
+.yo-spin{animation:yo-spin 900ms linear infinite;transform-origin:50% 50%}
+
+/* No backdrop-filter (older Firefox): raise the fill so nothing turns
+   into see-through soup. */
+@supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+  .yo-rail::before,.yo-foot::before{background:rgba(9,8,5,.96)}
+  .yo-source,.yo-avatar{background:rgba(60,48,10,.85)}
+  .yo-avatar[data-photo="true"]{background:rgba(38,34,25,.94)}
+  .yo-ghost{background:rgba(26,23,17,.92)}
+}
 
 @media (prefers-reduced-motion: reduce){
   .yo-stage,.yo-statusline{animation-duration:1ms}
   .yo-beam{animation:yo-breathe 1.8s ease-in-out infinite;transform:translateY(55%)}
-  .yo-face:hover,.yo-cta:hover:not(:disabled),.yo-ex:active,.yo-cta:active:not(:disabled){transform:none}
-  .yo-face[aria-checked="true"]{transform:none}
+  .yo-spin{animation:none}
+  .yo-cta:active:not(:disabled),.yo-avatar:active:not(:disabled){transform:none}
+  .yo-mono{transition-duration:1ms}
 }
 `}</style>
   );
@@ -459,7 +523,6 @@ export default function OnboardingPage() {
   const [statusIndex, setStatusIndex] = useState(0);
 
   const [name, setName] = useState('');
-  const [emoji, setEmoji] = useState(AVATARS[0]);
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(undefined);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState('');
@@ -566,6 +629,7 @@ export default function OnboardingPage() {
 
   const tagline = useMemo(() => deriveTagline(text), [text]);
   const trimmedName = name.trim();
+  const monogram = useMemo(() => initialsFor(trimmedName), [trimmedName]);
   const canEnter =
     trimmedName.length > 0 &&
     tags.softSkills.length > 0 &&
@@ -588,7 +652,7 @@ export default function OnboardingPage() {
     const profile: Profile = {
       id: 'me',
       name: trimmedName.slice(0, 40) || 'You',
-      emoji: emoji || AVATARS[0],
+      emoji: DEFAULT_AVATAR_EMOJI,
       photoUrl,
       gradient: MY_GRADIENT,
       tagline,
@@ -605,7 +669,6 @@ export default function OnboardingPage() {
     router.push('/home');
   }, [
     canEnter,
-    emoji,
     photoUrl,
     router,
     setProfile,
@@ -613,6 +676,7 @@ export default function OnboardingPage() {
     tagline,
     tags.interests,
     tags.softSkills,
+    trimmed,
     trimmedName,
   ]);
 
@@ -709,30 +773,6 @@ export default function OnboardingPage() {
                   {trimmed.length}
                 </span>
               </div>
-
-              <p className="yo-seclabel" style={{ fontFamily: MONO }}>
-                Or borrow one
-              </p>
-              {EXAMPLES.map((example) => (
-                <button
-                  key={example.title}
-                  type="button"
-                  className="yo-ex"
-                  onClick={() => setText(example.text)}
-                >
-                  <span
-                    className="yo-ex-emoji"
-                    aria-hidden="true"
-                    style={{ fontFamily: EMOJI_FACE }}
-                  >
-                    {example.emoji}
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span className="yo-ex-title">{example.title}</span>
-                    <span className="yo-ex-peek">{example.text}</span>
-                  </span>
-                </button>
-              ))}
             </>
           ) : null}
 
@@ -778,22 +818,13 @@ export default function OnboardingPage() {
           {/* ---------------- STEP 3 — confirm ---------------- */}
           {step === 'confirm' ? (
             <>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                  marginBottom: 14,
-                }}
-              >
+              <div className="yo-confirmhead">
                 <p className="yo-eyebrow" style={{ fontFamily: MONO, margin: 0 }}>
                   What we heard
                 </p>
                 <button
                   type="button"
                   className="yo-back"
-                  style={{ fontFamily: MONO }}
                   onClick={() => goTo('write')}
                 >
                   Rewrite
@@ -839,69 +870,63 @@ export default function OnboardingPage() {
                 onChange={(event) => setName(event.target.value)}
               />
 
-              <div
-                role="radiogroup"
-                aria-label="Pick an avatar"
-                className="yo-faces"
-              >
-                {AVATARS.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    role="radio"
-                    aria-checked={!photoUrl && emoji === option}
-                    aria-label={`Avatar ${option}`}
-                    className="yo-face"
-                    style={{ fontFamily: EMOJI_FACE }}
-                    onClick={() => {
-                      setEmoji(option);
-                      setPhotoUrl(undefined);
-                    }}
-                  >
-                    {option}
-                  </button>
-                ))}
-
-                <div className="yo-face-wrap">
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={Boolean(photoUrl)}
-                    aria-label={photoUrl ? 'Your photo. Tap to replace.' : 'Upload a photo'}
-                    className="yo-face"
-                    disabled={photoBusy}
-                    onClick={() => photoInputRef.current?.click()}
-                  >
-                    {photoUrl ? (
-                      <img src={photoUrl} alt="" className="yo-face-img" />
-                    ) : photoBusy ? (
-                      '…'
-                    ) : (
-                      '📷'
-                    )}
-                  </button>
+              <div className="yo-identity">
+                <button
+                  type="button"
+                  className="yo-avatar"
+                  data-photo={Boolean(photoUrl)}
+                  disabled={photoBusy}
+                  aria-label={photoUrl ? 'Replace your photo' : 'Add a photo'}
+                  onClick={() => photoInputRef.current?.click()}
+                >
                   {photoUrl ? (
+                    <img src={photoUrl} alt="" className="yo-avatar-img" />
+                  ) : photoBusy ? (
+                    <SpinnerGlyph />
+                  ) : (
+                    <span
+                      className="yo-mono"
+                      aria-hidden="true"
+                      style={{ fontSize: monogram.length > 1 ? 23 : 29 }}
+                    >
+                      {monogram}
+                    </span>
+                  )}
+                </button>
+
+                <div className="yo-identity-copy">
+                  <p className="yo-identity-line">
+                    {photoUrl
+                      ? 'Your photo is how people will spot you.'
+                      : 'People see your initials until you add a photo.'}
+                  </p>
+                  <div className="yo-photorow">
                     <button
                       type="button"
-                      className="yo-face-clear"
-                      aria-label="Remove photo"
-                      onClick={() => setPhotoUrl(undefined)}
+                      className="yo-photobtn"
+                      disabled={photoBusy}
+                      onClick={() => photoInputRef.current?.click()}
                     >
-                      ✕
+                      <CameraGlyph />
+                      {photoBusy
+                        ? 'Uploading…'
+                        : photoUrl
+                          ? 'Replace photo'
+                          : 'Add a photo'}
                     </button>
-                  ) : null}
+                    {photoUrl ? (
+                      <button
+                        type="button"
+                        className="yo-photobtn"
+                        data-quiet="true"
+                        onClick={() => setPhotoUrl(undefined)}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-              <p
-                style={{
-                  margin: '9px 0 0',
-                  fontSize: 11.5,
-                  lineHeight: 1.4,
-                  color: 'rgba(255,248,231,.4)',
-                }}
-              >
-                Tap the camera to add your own photo instead of an emoji.
-              </p>
               <input
                 ref={photoInputRef}
                 type="file"

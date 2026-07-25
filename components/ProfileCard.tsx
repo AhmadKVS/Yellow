@@ -10,6 +10,8 @@ const MONO =
   'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace';
 
 const EXIT_MS = 440;
+/* Apple's sheet curve. */
+const SHEET_EASE = 'cubic-bezier(.32,.72,0,1)';
 
 export interface ProfileCardProps {
   /** The tapped match. `null`/`undefined` renders nothing. */
@@ -20,70 +22,68 @@ export interface ProfileCardProps {
   onConnect: (person: SeedPersona) => void;
   /** Override the button copy. Defaults to "Connect", or "Message" when connected. */
   ctaLabel?: string;
-  /** Already connected — switches the CTA to the quieter outlined treatment. */
+  /** Already connected — switches the CTA to the quieter tinted treatment. */
   connected?: boolean;
 }
 
 function CardStyles() {
   return (
     <style href="yellow-profilecard" precedence="high">{`
-@keyframes y-shimmer{
-  0%{ transform:translateX(-130%) }
-  34%,100%{ transform:translateX(130%) }
-}
 .y-chip{
-  display:inline-flex; align-items:center; height:29px; padding:0 11px;
-  border-radius:11px; font-size:12.5px; font-weight:600; line-height:1;
-  letter-spacing:-.004em; white-space:nowrap; position:relative; overflow:hidden;
+  display:inline-flex; align-items:center; height:30px; padding:0 12px;
+  border-radius:10px; font-size:13px; font-weight:500; line-height:1;
+  letter-spacing:-.006em; white-space:nowrap;
 }
 .y-chip-on{
-  color:#1B1400;
-  background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
-  box-shadow:0 2px 12px -3px rgba(255,195,0,.5), inset 0 1px 0 rgba(255,255,255,.55);
-}
-.y-chip-on::after{
-  content:''; position:absolute; inset:0; pointer-events:none;
-  background:linear-gradient(105deg, rgba(255,255,255,0) 36%, rgba(255,255,255,.6) 50%, rgba(255,255,255,0) 64%);
-  transform:translateX(-130%);
-  animation:y-shimmer 4.8s cubic-bezier(.4,0,.2,1) infinite;
-  animation-delay:var(--d,0s);
+  color:#FFD60A;
+  background:rgba(255,214,10,.13);
+  border:1px solid rgba(255,214,10,.22);
 }
 .y-chip-off{
-  color:rgba(255,248,231,.52);
-  background:rgba(255,248,231,.026);
-  border:1px solid rgba(255,214,10,.13);
+  color:rgba(255,248,231,.40);
+  background:transparent;
+  border:1px solid rgba(255,255,255,.08);
 }
 .y-cta{
-  width:100%; height:54px; border-radius:16px; border:0; cursor:pointer;
-  font-size:16px; font-weight:680; letter-spacing:-.012em; color:#1A1200;
+  display:flex; align-items:center; justify-content:center;
+  width:100%; height:50px; border-radius:9999px; border:0; cursor:pointer;
+  font-size:15px; font-weight:600; letter-spacing:-.01em; color:#1A1200;
   background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
-  box-shadow:0 12px 32px -12px rgba(255,195,0,.62), inset 0 1px 0 rgba(255,255,255,.62);
-  transition:transform 280ms cubic-bezier(.22,1,.36,1),
-             box-shadow 280ms cubic-bezier(.22,1,.36,1),
-             filter 200ms linear, background 200ms linear;
+  box-shadow:0 8px 24px -10px rgba(255,199,0,.55);
+  transition:transform 120ms ${SHEET_EASE}, filter 120ms linear,
+             background 160ms linear;
 }
-.y-cta:hover{ transform:translateY(-1.5px); filter:brightness(1.05);
-  box-shadow:0 18px 40px -12px rgba(255,195,0,.75), inset 0 1px 0 rgba(255,255,255,.7); }
-.y-cta:active{ transform:translateY(1px) scale(.993); transition-duration:110ms; }
-.y-cta:focus-visible{ outline:2px solid #FFF8E7; outline-offset:3px; }
+.y-cta:hover{ filter:brightness(1.04); }
+.y-cta:active{ transform:scale(.97); }
+.y-cta:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px; }
 .y-cta-alt{
-  color:#FFD60A; background:rgba(255,214,10,.05);
-  border:1px solid rgba(255,214,10,.42); box-shadow:none;
+  color:#FFD60A; background:rgba(255,214,10,.13);
+  border:1px solid rgba(255,214,10,.22); box-shadow:none;
 }
-.y-cta-alt:hover{ background:rgba(255,214,10,.1);
-  box-shadow:0 12px 30px -16px rgba(255,195,0,.6); }
+.y-cta-alt:hover{ background:rgba(255,214,10,.2); filter:none; }
 .y-close{
   display:inline-flex; align-items:center; justify-content:center;
-  width:32px; height:32px; border-radius:9999px; cursor:pointer;
-  color:rgba(255,248,231,.44); background:transparent;
-  border:1px solid rgba(255,248,231,.1);
-  transition:color 200ms linear, border-color 200ms linear, background 200ms linear;
+  width:44px; height:44px; margin:-7px -12px 0 0; padding:0;
+  border:0; background:transparent; cursor:pointer;
 }
-.y-close:hover{ color:#FFF8E7; border-color:rgba(255,214,10,.4); background:rgba(255,214,10,.06); }
-.y-close:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px; }
+.y-close span{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px; border-radius:9999px;
+  color:rgba(255,248,231,.55); background:rgba(255,255,255,.08);
+  transition:color 160ms linear, background 160ms linear;
+}
+.y-close:hover span{ color:#FFF8E7; background:rgba(255,255,255,.14); }
+.y-close:focus-visible{ outline:2px solid #FFD60A; outline-offset:-6px; border-radius:9999px; }
+.y-sheet{
+  background:rgba(20,17,10,.70);
+  backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))){
+  .y-sheet{ background:rgba(14,12,7,.97) }
+}
 .y-sheet::-webkit-scrollbar{ width:0; height:0 }
 @media (prefers-reduced-motion: reduce){
-  .y-chip-on::after{ animation:none; opacity:0 }
   .y-cta{ transition-duration:1ms }
 }
 `}</style>
@@ -92,31 +92,33 @@ function CardStyles() {
 
 const norm = (s: string) => s.trim().toLowerCase();
 
-function Chip({ label, shared, i }: { label: string; shared: boolean; i: number }) {
+function Chip({ label, shared }: { label: string; shared: boolean }) {
   return (
     <span
       className={shared ? 'y-chip y-chip-on' : 'y-chip y-chip-off'}
-      style={
-        shared
-          ? ({ ['--d' as string]: `${(i % 6) * 0.42}s`, fontFamily: SANS })
-          : { fontFamily: SANS }
-      }
+      style={{ fontFamily: SANS }}
     >
       {label}
     </span>
   );
 }
 
+const EYEBROW: React.CSSProperties = {
+  fontFamily: MONO,
+  fontSize: 10.5,
+  fontWeight: 500,
+  letterSpacing: '0.14em',
+  textTransform: 'uppercase',
+};
+
 function Group({
   title,
   items,
   sharedSet,
-  offset,
 }: {
   title: string;
   items: string[];
   sharedSet: Set<string>;
-  offset: number;
 }) {
   if (!items.length) return null;
   const ordered = [...items].sort(
@@ -125,42 +127,23 @@ function Group({
   const count = ordered.filter((t) => sharedSet.has(norm(t))).length;
 
   return (
-    <section style={{ marginTop: 20 }}>
+    <section style={{ marginTop: 22 }}>
       <header
         style={{
           display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: 11,
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 10,
         }}
       >
-        <span
-          style={{
-            fontFamily: MONO,
-            fontSize: 9.5,
-            letterSpacing: '0.18em',
-            textTransform: 'uppercase',
-            color: 'rgba(255,248,231,.4)',
-          }}
-        >
+        <span style={{ ...EYEBROW, color: 'rgba(255,248,231,.40)' }}>
           {title}
         </span>
         <span
-          aria-hidden
           style={{
-            flex: 1,
-            height: 1,
-            background:
-              'linear-gradient(90deg, rgba(255,214,10,.18), rgba(255,214,10,.02))',
-          }}
-        />
-        <span
-          style={{
-            fontFamily: MONO,
-            fontSize: 9.5,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            color: count ? '#FFD60A' : 'rgba(255,248,231,.28)',
+            ...EYEBROW,
+            color: count ? 'rgba(255,214,10,.8)' : 'rgba(255,248,231,.26)',
           }}
         >
           {count} shared
@@ -168,12 +151,7 @@ function Group({
       </header>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
         {ordered.map((t, i) => (
-          <Chip
-            key={`${t}-${i}`}
-            label={t}
-            shared={sharedSet.has(norm(t))}
-            i={offset + i}
-          />
+          <Chip key={`${t}-${i}`} label={t} shared={sharedSet.has(norm(t))} />
         ))}
       </div>
     </section>
@@ -245,6 +223,16 @@ export default function ProfileCard({
 
   const label = ctaLabel ?? (connected ? 'Message' : 'Connect');
 
+  /* `tagline` is usually a truncated excerpt of `bio`, so printing both puts
+     the same opening sentence on screen twice, once cut off. When it is an
+     excerpt the full text below is strictly better; only a tagline that says
+     something new earns its own line. */
+  const bio = person.bio?.trim() ?? '';
+  const tagline = (person.tagline ?? '').trim();
+  const stem = tagline.replace(/[\s.…]+$/u, '').toLowerCase();
+  const showTagline =
+    Boolean(tagline) && !(stem.length > 0 && bio.toLowerCase().startsWith(stem));
+
   return (
     <div
       className="fixed inset-0 z-50"
@@ -257,11 +245,11 @@ export default function ProfileCard({
         onClick={onClose}
         className="absolute inset-0"
         style={{
-          background: 'rgba(5,4,2,.66)',
-          backdropFilter: 'blur(4px) saturate(.85)',
-          WebkitBackdropFilter: 'blur(4px) saturate(.85)',
+          background: 'rgba(0,0,0,.5)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
           opacity: open ? 1 : 0,
-          transition: 'opacity 420ms cubic-bezier(.22,1,.36,1)',
+          transition: `opacity 420ms ${SHEET_EASE}`,
         }}
       />
 
@@ -276,158 +264,145 @@ export default function ProfileCard({
           maxHeight: '88dvh',
           overflowY: 'auto',
           overscrollBehavior: 'contain',
-          padding: '14px 22px 26px',
-          borderTopLeftRadius: 30,
-          borderTopRightRadius: 30,
-          borderTop: '1px solid rgba(255,214,10,.18)',
-          backgroundImage: [
-            'radial-gradient(120% 62% at 50% 0%, rgba(255,195,0,.10) 0%, rgba(255,195,0,0) 62%)',
-            'linear-gradient(180deg, #17140C 0%, #100E09 40%, #0B0A08 100%)',
-          ].join(','),
-          boxShadow: '0 -30px 90px -26px rgba(255,178,0,.22)',
+          padding: '10px 20px 28px',
+          borderTopLeftRadius: 22,
+          borderTopRightRadius: 22,
+          borderTop: '1px solid rgba(255,255,255,.14)',
+          boxShadow:
+            '0 -20px 60px -20px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.05)',
           transform: open ? 'translateY(0)' : 'translateY(102%)',
-          transition: `transform ${EXIT_MS}ms cubic-bezier(.22,1,.36,1)`,
+          transition: `transform ${EXIT_MS}ms ${SHEET_EASE}`,
           willChange: 'transform',
         }}
       >
         <div
           aria-hidden
           style={{
-            width: 38,
-            height: 4,
-            borderRadius: 99,
-            background: 'rgba(255,248,231,.2)',
-            margin: '0 auto 18px',
+            width: 36,
+            height: 5,
+            borderRadius: 9999,
+            background: 'rgba(255,248,231,.22)',
+            margin: '0 auto 20px',
           }}
         />
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
           <Bubble
             profile={person}
-            size={62}
-            prominence={0.95}
+            size={60}
+            prominence={0.9}
             interactive={false}
             showLabel={false}
           />
-          <div style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              /* with no tagline the name is the only line, so centre it on
+                 the avatar instead of letting it hang from the top */
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              minHeight: 60,
+              paddingTop: showTagline ? 3 : 0,
+            }}
+          >
             <h2
               style={{
                 fontFamily: SANS,
                 fontSize: 21,
-                fontWeight: 680,
-                letterSpacing: '-0.024em',
-                lineHeight: 1.15,
+                fontWeight: 600,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.18,
                 color: '#FFF8E7',
                 margin: 0,
               }}
             >
               {person.name}
             </h2>
-            <p
-              style={{
-                fontFamily: SANS,
-                fontSize: 13.5,
-                lineHeight: 1.4,
-                letterSpacing: '-0.006em',
-                color: 'rgba(255,248,231,.5)',
-                margin: '5px 0 0',
-              }}
-            >
-              {person.tagline}
-            </p>
+            {showTagline ? (
+              <p
+                style={{
+                  fontFamily: SANS,
+                  fontSize: 13.5,
+                  fontWeight: 400,
+                  lineHeight: 1.42,
+                  color: 'rgba(255,248,231,.62)',
+                  margin: '4px 0 0',
+                }}
+              >
+                {tagline}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
             className="y-close"
             onClick={onClose}
             aria-label="Close"
-            style={{ flexShrink: 0, marginTop: 2 }}
+            style={{ flexShrink: 0 }}
           >
-            <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden>
-              <path
-                d="M1 1l11 11M12 1L1 12"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-              />
-            </svg>
+            <span>
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
+                <path
+                  d="M1.2 1.2 10.8 10.8M10.8 1.2 1.2 10.8"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
           </button>
         </div>
 
-        {person.bio?.trim() ? (
+        {bio ? (
           <p
             style={{
               fontFamily: SANS,
-              fontSize: 14,
-              lineHeight: 1.6,
-              letterSpacing: '-0.006em',
-              color: 'rgba(255,248,231,.68)',
+              fontSize: 15,
+              fontWeight: 400,
+              lineHeight: 1.5,
+              color: 'rgba(255,248,231,.62)',
               margin: '18px 0 0',
               whiteSpace: 'pre-wrap',
             }}
           >
-            {person.bio.trim()}
+            {bio}
           </p>
         ) : null}
 
-        {/* The pitch line. The number is a bubble — same object language as
-            the field it came from. */}
-        <p
-          style={{
-            fontFamily: SANS,
-            fontSize: 25,
-            fontWeight: 560,
-            letterSpacing: '-0.028em',
-            lineHeight: 1.42,
-            color: '#FFF8E7',
-            margin: '26px 0 2px',
-          }}
-        >
-          You share{' '}
-          <span
+        <div style={{ marginTop: 24 }}>
+          <p style={{ ...EYEBROW, color: 'rgba(255,248,231,.40)', margin: 0 }}>
+            Overlap
+          </p>
+          <p
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 46,
-              height: 46,
-              margin: '0 5px',
-              verticalAlign: '-13px',
-              borderRadius: 9999,
-              position: 'relative',
-              overflow: 'hidden',
-              fontFamily: MONO,
+              fontFamily: SANS,
               fontSize: 21,
               fontWeight: 600,
-              letterSpacing: '-0.03em',
-              color: total ? '#1A1300' : 'rgba(255,248,231,.55)',
-              backgroundImage: total
-                ? [
-                    'radial-gradient(circle at 32% 24%, rgba(255,255,255,.62) 0%, rgba(255,255,255,0) 46%)',
-                    'radial-gradient(circle at 34% 26%, #FFE45C 0%, #FFC300 76%)',
-                  ].join(',')
-                : 'linear-gradient(180deg, rgba(255,248,231,.08), rgba(255,248,231,.03))',
-              boxShadow: total
-                ? '0 0 26px rgba(255,214,10,.42), 0 0 60px rgba(255,178,0,.2), inset 0 1px 0 rgba(255,255,255,.5)'
-                : 'inset 0 0 0 1px rgba(255,248,231,.12)',
+              letterSpacing: '-0.02em',
+              lineHeight: 1.28,
+              color: '#FFF8E7',
+              margin: '7px 0 0',
             }}
           >
-            {total}
-          </span>{' '}
-          {tail}
-        </p>
+            You share{' '}
+            <span style={{ color: total ? '#FFD60A' : 'rgba(255,248,231,.40)' }}>
+              {total}
+            </span>{' '}
+            {tail}
+          </p>
+        </div>
 
         <Group
           title="Soft skills"
           items={person.softSkills ?? []}
           sharedSet={skillSet}
-          offset={0}
         />
         <Group
           title="Interests"
           items={person.interests ?? []}
           sharedSet={interestSet}
-          offset={3}
         />
 
         <div style={{ marginTop: 26 }}>
@@ -441,13 +416,12 @@ export default function ProfileCard({
           </button>
           <p
             style={{
-              fontFamily: MONO,
-              fontSize: 9.5,
-              letterSpacing: '0.16em',
-              textTransform: 'uppercase',
+              fontFamily: SANS,
+              fontSize: 12.5,
+              fontWeight: 400,
               textAlign: 'center',
-              color: 'rgba(255,248,231,.26)',
-              margin: '13px 0 0',
+              color: 'rgba(255,248,231,.40)',
+              margin: '12px 0 0',
             }}
           >
             {connected ? 'Already connected' : 'Both of you have to say yes'}

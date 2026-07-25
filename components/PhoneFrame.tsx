@@ -10,6 +10,80 @@ interface SessionUser {
   email?: string;
 }
 
+function FrameStyles() {
+  return (
+    <style href="yellow-frame" precedence="high">{`
+.y-frame-bg{ position:fixed; inset:0; z-index:-10; overflow:hidden; background:#050403 }
+/* Light from above, once. The pool sits under the sidebar's leading edge so the
+   chrome glass has warmth to refract; the vignette then lets the corners fall
+   to true black, so depth comes from the black and not from bloom. */
+.y-frame-dome{
+  position:absolute; left:50%; top:-56vh; width:124vh; height:124vh;
+  margin-left:-62vh; border-radius:9999px;
+  background:radial-gradient(circle,
+    rgba(255,201,10,.075) 0%,
+    rgba(255,190,20,.024) 40%,
+    rgba(255,190,20,0) 62%);
+}
+.y-frame-pool{
+  position:absolute; left:-190px; top:22%; width:640px; height:640px;
+  border-radius:9999px;
+  background:radial-gradient(circle,
+    rgba(255,186,20,.05) 0%,
+    rgba(255,170,30,.016) 46%,
+    rgba(255,170,30,0) 72%);
+}
+/* No sidebar to refract below md — the pool would only muddy the canvas. */
+@media (max-width:767px){ .y-frame-pool{ display:none } }
+.y-frame-vignette{
+  position:absolute; inset:-8%;
+  background:radial-gradient(circle at 50% 14%,
+    rgba(5,4,3,0) 20%, rgba(5,4,3,.62) 62%, rgba(5,4,3,.96) 100%);
+}
+
+/* Chrome glass — sidebar, bars, toasts. Fallback lives in globals.css. */
+.y-glass{
+  background:var(--glass-chrome);
+  -webkit-backdrop-filter:var(--glass-chrome-filter);
+  backdrop-filter:var(--glass-chrome-filter);
+}
+
+.y-side-edge{ box-shadow:inset -1px 0 0 var(--glass-hairline) }
+.y-top-hairline{ box-shadow:inset 0 1px 0 rgba(255,255,255,.08) }
+
+.y-brand-mark{
+  width:22px; height:22px; flex-shrink:0; border-radius:9999px;
+  box-shadow:0 0 12px 1px rgba(255,214,10,.35);
+}
+
+/* Sign-out sits on the same 24px optical margin as the nav pills, and picks up
+   the same pill hover so the sidebar reads as one column of rows. */
+.y-signout{
+  display:block; width:100%; margin-top:7px; padding:8px 10px;
+  border:0; border-radius:9999px; background:transparent; cursor:pointer;
+  text-align:left; font:inherit; font-size:12.5px; letter-spacing:-.005em;
+  color:rgba(255,248,231,.46);
+  transition:color 220ms var(--ease-ios), background-color 220ms var(--ease-ios);
+}
+.y-signout:hover{ color:#FFD60A; background:rgba(255,255,255,.045) }
+.y-signout:disabled{ opacity:.5; cursor:default }
+
+.y-signout-strip{
+  flex-shrink:0; border:0; background:transparent; cursor:pointer;
+  padding:4px 2px; font:inherit; font-size:11.5px; letter-spacing:-.004em;
+  color:rgba(255,248,231,.5);
+  transition:color 200ms var(--ease-ios);
+}
+.y-signout-strip:active{ color:#FFD60A }
+.y-signout-strip:disabled{ opacity:.5 }
+
+@media (prefers-reduced-motion: reduce){
+  .y-signout, .y-signout-strip{ transition-duration:1ms }
+}
+`}</style>
+  );
+}
+
 /** Signed-in identity + the only way out of the app. */
 function AccountFooter({ variant = 'sidebar' }: { variant?: 'sidebar' | 'strip' }) {
   const router = useRouter();
@@ -47,16 +121,11 @@ function AccountFooter({ variant = 'sidebar' }: { variant?: 'sidebar' | 'strip' 
   if (variant === 'strip') {
     if (!user) return null;
     return (
-      <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-5 py-2">
-        <span className="truncate text-[11.5px] text-[#FFF8E7]/45">
+      <div className="y-glass y-top-hairline flex items-center justify-between gap-3 px-5 py-1">
+        <span className="truncate text-[11.5px] tracking-[-0.005em] text-[rgba(255,248,231,0.38)]">
           {user.name || user.email}
         </span>
-        <button
-          type="button"
-          onClick={signOut}
-          disabled={busy}
-          className="shrink-0 text-[11.5px] text-[#FFD60A]/70 transition-colors duration-200 active:text-[#FFD60A] disabled:opacity-50"
-        >
+        <button type="button" onClick={signOut} disabled={busy} className="y-signout-strip">
           {busy ? 'Signing out…' : 'Sign out'}
         </button>
       </div>
@@ -64,21 +133,18 @@ function AccountFooter({ variant = 'sidebar' }: { variant?: 'sidebar' | 'strip' 
   }
 
   return (
-    <div className="mt-auto px-3">
+    <div className="mt-auto">
       {user && (
-        <div className="border-t border-white/[0.06] pt-3">
-          <p className="truncate text-[12px] font-medium text-[#FFF8E7]/70">
+        <div className="y-top-hairline pt-3.5">
+          <p className="truncate px-2.5 text-[12.5px] font-medium tracking-[-0.012em] text-[rgba(255,248,231,0.72)]">
             {user.name || user.email}
           </p>
           {user.name && user.email && (
-            <p className="mt-0.5 truncate text-[10.5px] text-[#FFF8E7]/28">{user.email}</p>
+            <p className="mt-[3px] truncate px-2.5 text-[11px] tracking-[-0.004em] text-[rgba(255,248,231,0.3)]">
+              {user.email}
+            </p>
           )}
-          <button
-            type="button"
-            onClick={signOut}
-            disabled={busy}
-            className="mt-2 text-[11px] text-[#FFF8E7]/40 underline-offset-2 transition-colors duration-200 hover:text-[#FFD60A]/80 hover:underline disabled:opacity-50"
-          >
+          <button type="button" onClick={signOut} disabled={busy} className="y-signout">
             {busy ? 'Signing out…' : 'Sign out'}
           </button>
         </div>
@@ -95,7 +161,9 @@ function isFullBleed(pathname: string) {
 /** Routes whose reading column widens past the standard 560px, for a
  *  side-by-side layout that would be cramped in the normal column. */
 function isWide(pathname: string) {
-  return pathname === '/settings';
+  // Hubs go wide for the three-column board; the board CSS switches from
+  // scroll-snap to three-up via a container query the moment it gets room.
+  return pathname === '/settings' || pathname.startsWith('/hubs');
 }
 
 /** Routes that render before onboarding completes, where nav would be a dead end. */
@@ -117,42 +185,29 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <div className="fixed inset-0 -z-10 overflow-hidden bg-[#0B0A08]">
-        <div
-          aria-hidden="true"
-          className="absolute left-1/2 top-1/2 h-[95vh] w-[95vh] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-[0.22] blur-[140px]"
-          style={{ background: 'radial-gradient(circle, #FFD60A 0%, transparent 68%)' }}
-        />
-        <div
-          aria-hidden="true"
-          className="absolute -left-[10vw] top-[8vh] h-[42vh] w-[42vh] rounded-full opacity-[0.10] blur-[130px]"
-          style={{ background: 'radial-gradient(circle, #FFC300 0%, transparent 70%)' }}
-        />
-        <div
-          aria-hidden="true"
-          className="absolute -right-[8vw] bottom-[4vh] h-[38vh] w-[38vh] rounded-full opacity-[0.08] blur-[130px]"
-          style={{ background: 'radial-gradient(circle, #FF8A00 0%, transparent 70%)' }}
-        />
+      <FrameStyles />
+
+      <div aria-hidden="true" className="y-frame-bg">
+        <div className="y-frame-dome" />
+        <div className="y-frame-pool" />
+        <div className="y-frame-vignette" />
       </div>
 
       <div className="relative flex h-dvh w-full overflow-hidden">
         {!chromeless && (
-          <aside className="hidden w-[236px] shrink-0 flex-col border-r border-white/[0.07] px-5 py-7 md:flex">
-            <div className="flex items-center gap-2.5 px-3">
-              <span
-                aria-hidden="true"
-                className="h-3 w-3 rounded-full bg-[#FFD60A]"
-                style={{ boxShadow: '0 0 18px 2px rgba(255,214,10,0.65)' }}
-              />
-              <span className="text-[19px] font-semibold tracking-tight text-[#FFF8E7]">
+          <aside className="y-glass y-side-edge hidden w-[236px] shrink-0 flex-col px-3.5 pb-4 pt-6 md:flex">
+            <div className="flex items-center gap-2.5 px-2.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/brand/yellow-sun-mark-128.png" alt="" aria-hidden="true" className="y-brand-mark" />
+              <span className="text-[20px] font-semibold tracking-[-0.022em] text-[#FFF8E7]">
                 Yellow
               </span>
             </div>
-            <p className="mt-2 px-3 text-[12px] leading-relaxed text-[#FFF8E7]/35">
+            <p className="mt-2.5 px-2.5 text-[12.5px] leading-[1.42] tracking-[-0.004em] text-[rgba(255,248,231,0.38)]">
               Built on what you share, not what you&rsquo;ve done.
             </p>
 
-            <div className="mt-8">
+            <div className="mt-7">
               <TabBar orientation="sidebar" />
             </div>
 
@@ -176,7 +231,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
           )}
 
           {!chromeless && (
-            <div className="md:hidden">
+            <div className="y-mobile-bar md:hidden">
               <AccountFooter variant="strip" />
               <TabBar orientation="bottom" />
             </div>

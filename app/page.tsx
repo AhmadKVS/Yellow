@@ -15,9 +15,14 @@ export default function Home() {
   }, [hydrated, me, router]);
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4">
-      <span className="h-3 w-3 animate-pulse rounded-full bg-yellow shadow-glow" />
-      <p className="text-sm uppercase tracking-widest text-muted-gold">Yellow</p>
+    <div className="flex min-h-dvh flex-1 flex-col items-center justify-center gap-5">
+      <span
+        aria-hidden="true"
+        className="h-3 w-3 animate-breathe rounded-full bg-yellow shadow-glow"
+      />
+      <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-gold">
+        Yellow
+      </p>
     </div>
   );
 }

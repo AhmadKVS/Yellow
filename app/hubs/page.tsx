@@ -13,11 +13,17 @@ import {
   FILL_VIEWPORT,
   HUB_EMOJI,
   HubStyles,
+  IconChevronRight,
+  IconPlus,
   MemberStack,
+  MONO,
   SANS,
 } from './_ui';
 
 const SHEET_MS = 420;
+
+/** Apple's sheet curve. Used for every enter on this screen. */
+const CURVE = 'cubic-bezier(.32,.72,0,1)';
 
 /** Resolves member ids to live people. Empty until the directory answers. */
 type PersonIndex = ReadonlyMap<string, Profile>;
@@ -164,8 +170,8 @@ export default function HubsPage() {
           aria-hidden
           className="animate-pulse"
           style={{
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
             borderRadius: 9999,
             background:
               'radial-gradient(circle at 34% 26%, #FFE45C 0%, #FFC300 76%)',
@@ -187,21 +193,11 @@ export default function HubsPage() {
     <div className="flex w-full flex-col" style={{ minHeight: FILL_VIEWPORT }}>
       <HubStyles />
 
-      {/* Header */}
-      <header className="flex shrink-0 items-end justify-between gap-3 pb-4 pt-6">
+      {/* ---------------- Header ---------------- */}
+      <header className="flex shrink-0 items-end justify-between gap-3 pb-5 pt-7">
         <div>
           <Eyebrow>Shared workspaces</Eyebrow>
-          <h1
-            style={{
-              fontFamily: SANS,
-              fontSize: 28,
-              fontWeight: 660,
-              letterSpacing: '-0.032em',
-              lineHeight: 1.1,
-              color: '#FFF8E7',
-              margin: '6px 0 0',
-            }}
-          >
+          <h1 className="y-hb-title" style={{ fontFamily: SANS, marginTop: 7 }}>
             Hubs
           </h1>
         </div>
@@ -209,20 +205,18 @@ export default function HubsPage() {
         {hubs.length > 0 ? (
           <button
             type="button"
-            className="y-hb-pill"
+            className="y-hb-pill y-hb-pill-sm"
             onClick={openSheet}
-            style={{ fontFamily: SANS }}
+            style={{ fontFamily: SANS, marginBottom: 3 }}
           >
-            <span aria-hidden style={{ fontSize: 15, lineHeight: 1 }}>
-              +
-            </span>
+            <IconPlus size={14} />
             New hub
           </button>
         ) : null}
       </header>
 
-      {/* Body */}
-      <div className="flex flex-1 flex-col pb-8">
+      {/* ---------------- Body ---------------- */}
+      <div className="flex flex-1 flex-col pb-10">
         {hubs.length === 0 ? (
           loadingHubs ? (
             <div className="flex flex-1 items-center justify-center pb-10">
@@ -236,33 +230,32 @@ export default function HubsPage() {
                 aria-hidden
                 style={{ display: 'flex', alignItems: 'center', gap: 10 }}
               >
-                {[46, 62, 46].map((s, i) => (
+                {[44, 60, 44].map((s, i) => (
                   <span
                     key={i}
                     style={{
                       width: s,
                       height: s,
                       borderRadius: 18,
-                      border: `1.5px dashed rgba(255,214,10,${i === 1 ? 0.42 : 0.18})`,
+                      border: `1px dashed rgba(255,214,10,${i === 1 ? 0.38 : 0.16})`,
                       background:
                         i === 1
-                          ? 'radial-gradient(circle at 40% 30%, rgba(255,214,10,.14), transparent 70%)'
+                          ? 'radial-gradient(circle at 42% 32%, rgba(255,214,10,.15), transparent 70%)'
                           : 'transparent',
                       boxShadow:
-                        i === 1 ? '0 0 34px -6px rgba(255,214,10,.35)' : 'none',
+                        i === 1 ? '0 0 36px -8px rgba(255,214,10,.42)' : 'none',
                     }}
                   />
                 ))}
               </span>
 
               <h2
+                className="y-hb-h2"
                 style={{
                   fontFamily: SANS,
                   fontSize: 25,
-                  fontWeight: 600,
-                  letterSpacing: '-0.03em',
+                  letterSpacing: '-0.028em',
                   lineHeight: 1.22,
-                  color: '#FFF8E7',
                   margin: '30px 0 0',
                   maxWidth: 300,
                 }}
@@ -271,28 +264,21 @@ export default function HubsPage() {
               </h2>
 
               <p
-                style={{
-                  fontFamily: SANS,
-                  fontSize: 14.5,
-                  lineHeight: 1.55,
-                  letterSpacing: '-0.006em',
-                  color: 'rgba(255,248,231,.52)',
-                  margin: '12px 0 0',
-                  maxWidth: 300,
-                }}
+                className="y-hb-body"
+                style={{ fontFamily: SANS, margin: '12px 0 0', maxWidth: 306 }}
               >
-                Pull in the two or three people this one actually needs, then
-                post updates, ask questions and track who&rsquo;s doing what.
-                Everyone in the hub sees the same room.
+                Pull in the two or three people this one actually needs, then post
+                updates, ask questions and track who&rsquo;s doing what. Everyone in
+                the hub sees the same room.
               </p>
 
               {offline ? (
-                <p style={{ margin: '14px 0 0' }}>
-                  <Eyebrow>Hubs are offline right now — try again shortly</Eyebrow>
+                <p style={{ margin: '16px 0 0' }}>
+                  <Eyebrow tone="gold">Hubs are offline — try again shortly</Eyebrow>
                 </p>
               ) : null}
 
-              <div style={{ width: '100%', maxWidth: 300, marginTop: 30 }}>
+              <div style={{ width: '100%', maxWidth: 306, marginTop: 30 }}>
                 <button
                   type="button"
                   className="y-hb-cta"
@@ -301,7 +287,7 @@ export default function HubsPage() {
                 >
                   Create your first hub
                 </button>
-                <p style={{ margin: '14px 0 0' }}>
+                <p style={{ margin: '16px 0 0' }}>
                   <Eyebrow>The right people for the right work</Eyebrow>
                 </p>
               </div>
@@ -309,54 +295,31 @@ export default function HubsPage() {
           )
         ) : (
           /* ---------------- Hub list ---------------- */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
             {guest.length > 0 ? (
-              <section>
-                <p style={{ margin: '0 0 9px' }}>
-                  <Eyebrow tone="gold">You were pulled in</Eyebrow>
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {guest.map((hub) => (
-                    <HubCard
-                      key={hub.hubId}
-                      hub={hub}
-                      personIndex={personIndex}
-                      mine={mine}
-                    />
-                  ))}
-                </div>
-              </section>
+              <HubGroup
+                label="You were pulled in"
+                tone="gold"
+                hubs={guest}
+                personIndex={personIndex}
+                mine={mine}
+                offset={0}
+              />
             ) : null}
 
             {owned.length > 0 ? (
-              <section>
-                {guest.length > 0 ? (
-                  <p style={{ margin: '0 0 9px' }}>
-                    <Eyebrow>Yours</Eyebrow>
-                  </p>
-                ) : null}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {owned.map((hub) => (
-                    <HubCard
-                      key={hub.hubId}
-                      hub={hub}
-                      personIndex={personIndex}
-                      mine={mine}
-                    />
-                  ))}
-                </div>
-              </section>
+              <HubGroup
+                label={guest.length > 0 ? 'Yours' : 'Your hubs'}
+                hubs={owned}
+                personIndex={personIndex}
+                mine={mine}
+                offset={guest.length}
+              />
             ) : null}
 
             <p
-              style={{
-                fontFamily: SANS,
-                fontSize: 12.5,
-                lineHeight: 1.5,
-                textAlign: 'center',
-                color: 'rgba(255,248,231,.3)',
-                margin: 0,
-              }}
+              className="y-hb-foot"
+              style={{ fontFamily: SANS, textAlign: 'center', margin: 0 }}
             >
               Only people you&rsquo;ve connected with can join a hub.
             </p>
@@ -373,13 +336,10 @@ export default function HubsPage() {
           <div
             aria-hidden
             onClick={closeSheet}
-            className="absolute inset-0"
+            className="y-hb-scrim"
             style={{
-              background: 'rgba(5,4,2,.66)',
-              backdropFilter: 'blur(4px) saturate(.85)',
-              WebkitBackdropFilter: 'blur(4px) saturate(.85)',
               opacity: sheetShown ? 1 : 0,
-              transition: `opacity ${SHEET_MS}ms cubic-bezier(.22,1,.36,1)`,
+              transition: `opacity ${SHEET_MS}ms ${CURVE}`,
             }}
           />
 
@@ -393,41 +353,18 @@ export default function HubsPage() {
               maxHeight: '90dvh',
               overflowY: 'auto',
               overscrollBehavior: 'contain',
-              padding: '14px 22px max(26px, env(safe-area-inset-bottom))',
-              borderTopLeftRadius: 30,
-              borderTopRightRadius: 30,
-              borderTop: '1px solid rgba(255,214,10,.18)',
-              backgroundImage: [
-                'radial-gradient(120% 62% at 50% 0%, rgba(255,195,0,.10) 0%, rgba(255,195,0,0) 62%)',
-                'linear-gradient(180deg, #17140C 0%, #100E09 40%, #0B0A08 100%)',
-              ].join(','),
-              boxShadow: '0 -30px 90px -26px rgba(255,178,0,.22)',
+              padding: '10px 20px max(24px, env(safe-area-inset-bottom))',
               transform: sheetShown ? 'translateY(0)' : 'translateY(102%)',
-              transition: `transform ${SHEET_MS}ms cubic-bezier(.22,1,.36,1)`,
+              transition: `transform ${SHEET_MS}ms ${CURVE}`,
               willChange: 'transform',
             }}
           >
-            <div
-              aria-hidden
-              style={{
-                width: 38,
-                height: 4,
-                borderRadius: 99,
-                background: 'rgba(255,248,231,.2)',
-                margin: '0 auto 20px',
-              }}
-            />
+            <div aria-hidden className="y-hb-grabber" style={{ marginBottom: 20 }} />
 
             <Eyebrow>New hub</Eyebrow>
             <h2
-              style={{
-                fontFamily: SANS,
-                fontSize: 22,
-                fontWeight: 660,
-                letterSpacing: '-0.028em',
-                color: '#FFF8E7',
-                margin: '7px 0 22px',
-              }}
+              className="y-hb-h2"
+              style={{ fontFamily: SANS, margin: '8px 0 22px' }}
             >
               What are you building?
             </h2>
@@ -438,8 +375,8 @@ export default function HubsPage() {
             <input
               id="hub-name"
               ref={nameRef}
-              className="y-hb-input"
-              style={{ fontFamily: SANS, marginTop: 8 }}
+              className="y-hb-boxed"
+              style={{ fontFamily: SANS, marginTop: 9 }}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="AI tutor for trades"
@@ -447,14 +384,14 @@ export default function HubsPage() {
               autoComplete="off"
             />
 
-            <div style={{ marginTop: 20 }}>
+            <div style={{ marginTop: 22 }}>
               <Eyebrow>Icon</Eyebrow>
               <div
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(6, 1fr)',
                   gap: 8,
-                  marginTop: 8,
+                  marginTop: 9,
                 }}
               >
                 {HUB_EMOJI.map((opt) => {
@@ -476,14 +413,14 @@ export default function HubsPage() {
               </div>
             </div>
 
-            <div style={{ marginTop: 20 }}>
+            <div style={{ marginTop: 22 }}>
               <label htmlFor="hub-line" style={{ display: 'block' }}>
                 <Eyebrow>One-liner</Eyebrow>
               </label>
               <input
                 id="hub-line"
-                className="y-hb-input"
-                style={{ fontFamily: SANS, marginTop: 8 }}
+                className="y-hb-boxed"
+                style={{ fontFamily: SANS, marginTop: 9 }}
                 value={oneLiner}
                 onChange={(e) => setOneLiner(e.target.value)}
                 placeholder="Ship a working demo by October"
@@ -495,29 +432,26 @@ export default function HubsPage() {
             {error ? (
               <p
                 role="alert"
-                style={{
-                  fontFamily: SANS,
-                  fontSize: 13,
-                  lineHeight: 1.45,
-                  color: 'rgba(255,138,102,.92)',
-                  margin: '16px 0 0',
-                }}
+                className="y-hb-sub"
+                style={{ fontFamily: SANS, color: '#FFC300', margin: '16px 0 0' }}
               >
                 {error}
               </p>
             ) : null}
 
-            <div style={{ marginTop: 26, display: 'flex', gap: 10 }}>
+            <div
+              style={{
+                marginTop: 26,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
               <button
                 type="button"
                 onClick={closeSheet}
-                className="y-hb-pill y-hb-quiet"
-                style={{
-                  fontFamily: SANS,
-                  height: 54,
-                  padding: '0 20px',
-                  borderRadius: 16,
-                }}
+                className="y-hb-plain"
+                style={{ fontFamily: SANS, flexShrink: 0 }}
               >
                 Cancel
               </button>
@@ -538,16 +472,57 @@ export default function HubsPage() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Hub card                                                             */
+/* One inset group of hubs                                              */
 /* ------------------------------------------------------------------ */
-function HubCard({
+function HubGroup({
+  label,
+  tone,
+  hubs,
+  personIndex,
+  mine,
+  offset,
+}: {
+  label: string;
+  tone?: 'dim' | 'gold';
+  hubs: HubSummary[];
+  personIndex: PersonIndex;
+  mine: ReadonlySet<string>;
+  /** Keeps the entrance stagger continuous across two groups. */
+  offset: number;
+}) {
+  return (
+    <section>
+      <p style={{ margin: '0 0 10px', paddingLeft: 2 }}>
+        <Eyebrow tone={tone}>{label}</Eyebrow>
+      </p>
+      <div className="y-hb-group">
+        {hubs.map((hub, i) => (
+          <HubRow
+            key={hub.hubId}
+            hub={hub}
+            personIndex={personIndex}
+            mine={mine}
+            index={offset + i}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* One hub row                                                          */
+/* ------------------------------------------------------------------ */
+function HubRow({
   hub,
   personIndex,
   mine,
+  index,
 }: {
   hub: HubSummary;
   personIndex: PersonIndex;
   mine: ReadonlySet<string>;
+  index: number;
 }) {
   const owned = mine.has(hub.ownerId);
 
@@ -576,140 +551,118 @@ function HubCard({
   return (
     <Link
       href={`/hubs/${hub.hubId}`}
-      className={`y-hb-card${owned ? '' : ' y-hb-card-guest'}`}
+      className="y-hb-row y-hb-in"
+      style={
+        {
+          '--sep': '70px',
+          alignItems: 'flex-start',
+          fontFamily: SANS,
+          /* Stagger the first six rows only — past that it reads as lag. */
+          animationDelay: index < 6 ? `${index * 45}ms` : '0ms',
+        } as React.CSSProperties
+      }
     >
-      <div className="y-hb-head">
-        <span className="y-hb-tile">
-          <span
-            aria-hidden
-            style={{ fontFamily: EMOJI_FONT, fontSize: 22, lineHeight: 1 }}
-          >
-            {hub.emoji || '🚀'}
-          </span>
+      <span className="y-hb-tile">
+        <span
+          aria-hidden
+          style={{ fontFamily: EMOJI_FONT, fontSize: 21, lineHeight: 1 }}
+        >
+          {hub.emoji || '🚀'}
         </span>
+      </span>
 
-        <span style={{ flex: 1, minWidth: 0 }}>
-          {/* The new, meaningful state: someone put you in their project. */}
-          {!owned ? (
-            <span style={{ display: 'block', marginBottom: 4 }}>
-              <Eyebrow tone="gold">
-                {ownerFirstName
-                  ? `${ownerFirstName} added you`
-                  : 'You were added to this'}
-              </Eyebrow>
-            </span>
-          ) : null}
-
-          <span
-            style={{
-              display: 'block',
-              fontFamily: SANS,
-              fontSize: 16,
-              fontWeight: 650,
-              letterSpacing: '-0.02em',
-              lineHeight: 1.25,
-              color: '#FFF8E7',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="y-hb-headline y-hb-clip" style={{ flex: 1, minWidth: 0 }}>
             {hub.name}
           </span>
 
-          {hub.oneLiner ? (
+          {/* The new, meaningful state: someone put you in their project.
+              A chip, not a banner — it labels the row, it isn't the row. */}
+          {!owned ? (
             <span
-              style={{
-                display: 'block',
-                fontFamily: SANS,
-                fontSize: 13,
-                lineHeight: 1.4,
-                color: 'rgba(255,248,231,.46)',
-                marginTop: 3,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
+              className="y-hb-chip y-hb-chip-tint"
+              style={{ flexShrink: 0, maxWidth: 140, overflow: 'hidden' }}
             >
-              {hub.oneLiner}
+              <span className="y-hb-clip">
+                {ownerFirstName ? `Invited by ${ownerFirstName}` : 'Invited'}
+              </span>
             </span>
           ) : null}
+        </span>
 
-          {/* Who is in it */}
+        {hub.oneLiner ? (
           <span
+            className="y-hb-sub y-hb-clip"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              marginTop: 9,
+              display: 'block',
+              marginTop: 3,
+              color: 'rgba(255,248,231,.5)',
             }}
           >
-            <MemberStack members={members} />
-            <Eyebrow tone={others ? 'gold' : 'dim'}>
-              {others === 0 ? 'Just you so far' : `You + ${others}`}
-            </Eyebrow>
+            {hub.oneLiner}
           </span>
+        ) : null}
 
-          {/* What they cover between them — the reason the hub exists */}
-          {members.length > 0 ? (
-            <span style={{ display: 'block', marginTop: 10 }}>
-              <CoverageRow members={members} total={hub.memberIds.length} />
-            </span>
-          ) : null}
-
-          {/* Live signal — is anything actually happening in here? */}
-          {hasSignal && signal ? (
-            <span
-              style={{
-                display: 'block',
-                marginTop: 9,
-                fontFamily: SANS,
-                fontSize: 12,
-                lineHeight: 1.4,
-                color: 'rgba(255,248,231,.44)',
-              }}
-            >
-              {signal.openTasks > 0 ? (
-                <span>
-                  {signal.openTasks} open task{signal.openTasks === 1 ? '' : 's'}
-                </span>
-              ) : null}
-              {signal.overdueTasks > 0 ? (
-                <>
-                  <span className="y-hb-dot">·</span>
-                  <span className="y-hb-warn">{signal.overdueTasks} overdue</span>
-                </>
-              ) : null}
-              {signal.lastActivityAt ? (
-                <>
-                  {signal.openTasks > 0 ? <span className="y-hb-dot">·</span> : null}
-                  <span>last update {relativeTime(signal.lastActivityAt)} ago</span>
-                </>
-              ) : null}
-            </span>
-          ) : null}
-        </span>
-
+        {/* Who is in it, and what they cover between them */}
         <span
-          aria-hidden
           style={{
-            flexShrink: 0,
-            alignSelf: 'center',
-            color: 'rgba(255,248,231,.32)',
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 8,
+            marginTop: 10,
           }}
         >
-          <svg width="8" height="13" viewBox="0 0 8 13">
-            <path
-              d="M1.5 1L6.5 6.5L1.5 12"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-          </svg>
+          <MemberStack members={members} size={24} />
+          <span className="y-hb-mono" style={{ fontFamily: MONO }}>
+            {others === 0 ? 'Just you so far' : `You + ${others}`}
+          </span>
         </span>
-      </div>
+
+        {members.length > 0 ? (
+          <span style={{ display: 'block', marginTop: 9 }}>
+            <CoverageRow
+              members={members}
+              limit={3}
+              total={hub.memberIds.length}
+              summary={false}
+            />
+          </span>
+        ) : null}
+
+        {/* Live signal — is anything actually happening in here? */}
+        {hasSignal && signal ? (
+          <span
+            className="y-hb-mono"
+            style={{ display: 'block', marginTop: 9, fontFamily: MONO }}
+          >
+            {signal.openTasks > 0 ? (
+              <span>
+                {signal.openTasks} open task{signal.openTasks === 1 ? '' : 's'}
+              </span>
+            ) : null}
+            {signal.overdueTasks > 0 ? (
+              <>
+                {signal.openTasks > 0 ? <span className="y-hb-dot">·</span> : null}
+                <span className="y-hb-warn">{signal.overdueTasks} overdue</span>
+              </>
+            ) : null}
+            {signal.lastActivityAt ? (
+              <>
+                {signal.openTasks > 0 || signal.overdueTasks > 0 ? (
+                  <span className="y-hb-dot">·</span>
+                ) : null}
+                <span>last update {relativeTime(signal.lastActivityAt)} ago</span>
+              </>
+            ) : null}
+          </span>
+        ) : null}
+      </span>
+
+      <span className="y-hb-chev" style={{ alignSelf: 'center' }}>
+        <IconChevronRight />
+      </span>
     </Link>
   );
 }

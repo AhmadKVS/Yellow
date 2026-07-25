@@ -23,6 +23,13 @@ const MONO =
 /** How often an open thread re-reads the shared pair record. */
 const PAIR_POLL_MS = 4000;
 
+/**
+ * How many of the newest received bubbles get the real backdrop layer. Two
+ * glass bars plus this many bubbles keeps the screen inside the material
+ * budget; older messages take the opaque fallback fill instead.
+ */
+const GLASS_TAIL = 14;
+
 /* ------------------------------------------------------------------ */
 /* Ids — a module counter guarantees uniqueness even inside one tick.   */
 /* These become S3 key segments, so the shape is deliberately narrow.   */
@@ -101,84 +108,141 @@ function dayLabel(at: number): string {
 function ChatStyles() {
   return (
     <style href="yellow-chat" precedence="high">{`
+/* Chrome glyphs sit bare, the way iOS sets a back chevron — the 44px box is
+   the touch target, not a visible chip. */
 .y-ch-icon{
   display:inline-flex; align-items:center; justify-content:center;
-  width:34px; height:34px; border-radius:9999px; cursor:pointer; flex-shrink:0;
-  color:rgba(255,248,231,.62); background:transparent;
-  border:1px solid rgba(255,248,231,.1);
-  transition:color 200ms linear, border-color 200ms linear, background 200ms linear;
+  width:44px; height:44px; border-radius:9999px; border:0; padding:0;
+  cursor:pointer; flex-shrink:0; text-decoration:none;
+  color:rgba(255,248,231,.55); background:transparent;
+  transition:color 180ms linear, background 180ms linear;
 }
-.y-ch-icon:hover{ color:#FFF8E7; border-color:rgba(255,214,10,.42); background:rgba(255,214,10,.06); }
-.y-ch-icon:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px; }
+.y-ch-icon:hover{ color:#FFD60A; background:rgba(255,255,255,.045) }
+.y-ch-icon:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
+.y-ch-icon-lead{ margin-left:-12px }
+.y-ch-icon-tail{ margin-right:-12px }
+
+/* Chrome glass. The bars bleed to the frame's gutters, so the hairline is
+   the only edge the eye gets. */
+.y-ch-bar{
+  background:rgba(20,17,10,.70);
+  backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);
+}
+.y-ch-bar-top{ border-bottom:1px solid rgba(255,255,255,.08) }
+.y-ch-bar-bot{ border-top:1px solid rgba(255,255,255,.08) }
+@supports not (backdrop-filter: blur(1px)){
+  .y-ch-bar{ background:rgba(16,14,9,.96) }
+}
 
 @keyframes y-ch-in{
-  from{ opacity:0; transform:translateY(7px) scale(.985) }
+  from{ opacity:0; transform:translateY(6px) scale(.99) }
   to{ opacity:1; transform:none }
 }
 .y-ch-bub{
-  max-width:79%; padding:9px 13px 8px; position:relative;
-  font-size:14.5px; line-height:1.44; letter-spacing:-.008em;
+  max-width:76%; padding:9px 14px; position:relative;
+  font-size:15px; line-height:1.38; letter-spacing:-.006em;
   word-break:break-word; white-space:pre-wrap;
-  animation:y-ch-in 340ms cubic-bezier(.22,1,.36,1) both;
+  animation:y-ch-in 280ms cubic-bezier(.32,.72,0,1) both;
 }
+/* Yours is the one filled element on the screen. */
 .y-ch-me{
   color:#1A1200; align-self:flex-end;
   background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
-  box-shadow:0 6px 20px -10px rgba(255,195,0,.7), inset 0 1px 0 rgba(255,255,255,.5);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42);
 }
+/* Theirs is clear glass: the canvas refracts through a received message. */
 .y-ch-them{
-  color:rgba(255,248,231,.94); align-self:flex-start;
-  background:rgba(255,248,231,.055);
-  border:1px solid rgba(255,214,10,.11);
+  color:#FFF8E7; align-self:flex-start;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.08);
+  backdrop-filter:blur(16px) saturate(1.3);
+  -webkit-backdrop-filter:blur(16px) saturate(1.3);
+}
+/* Deeper in the backlog the material stops earning its cost: past the most
+   recent run of bubbles, the same colour ships without a backdrop layer so a
+   long thread never composites more glass than a screen can carry. */
+.y-ch-them-flat{
+  background:rgba(255,255,255,.09);
+  backdrop-filter:none; -webkit-backdrop-filter:none;
+}
+@supports not (backdrop-filter: blur(1px)){
+  .y-ch-them{ background:rgba(255,255,255,.09) }
 }
 
 /* A message the server never took. It stays on screen; it just stops
    pretending it landed. */
 .y-ch-unsent{ opacity:.5 }
 .y-ch-unsent-note{
-  font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
-  color:rgba(255,159,28,.72);
+  font-size:10.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(255,159,28,.7);
 }
 
 /* Voice playback */
 .y-ch-play{
   display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
-  width:24px; height:24px; border-radius:9999px; border:0; padding:0; cursor:pointer;
-  transition:transform 200ms cubic-bezier(.22,1,.36,1), filter 160ms linear;
+  width:26px; height:26px; border-radius:9999px; border:0; padding:0; cursor:pointer;
+  transition:transform 120ms cubic-bezier(.32,.72,0,1), filter 160ms linear;
 }
-.y-ch-play:hover:not(:disabled){ transform:scale(1.08); filter:brightness(1.08) }
-.y-ch-play:active:not(:disabled){ transform:scale(.94) }
-.y-ch-play:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
-.y-ch-play:disabled{ cursor:default; opacity:.55 }
+.y-ch-play:hover:not(:disabled){ filter:brightness(1.1) }
+.y-ch-play:active:not(:disabled){ transform:scale(.92) }
+.y-ch-play:focus-visible{ outline:2px solid currentColor; outline-offset:2px }
+.y-ch-play:disabled{ cursor:default; opacity:.5 }
 
-/* Primary CTA — shared with the locked state */
+/* The screen's one filled pill — locked state only. */
 .y-ch-cta{
   display:flex; align-items:center; justify-content:center;
-  width:100%; height:54px; border-radius:16px; border:0; cursor:pointer;
-  font-size:16px; font-weight:680; letter-spacing:-.012em; color:#1A1200;
+  width:100%; height:50px; border-radius:9999px; border:0; cursor:pointer;
+  text-decoration:none;
+  font-size:15px; font-weight:600; letter-spacing:-.01em; color:#1A1200;
   background:linear-gradient(180deg,#FFE45C 0%,#FFC300 100%);
-  box-shadow:0 12px 32px -12px rgba(255,195,0,.62), inset 0 1px 0 rgba(255,255,255,.62);
-  transition:transform 280ms cubic-bezier(.22,1,.36,1), box-shadow 280ms cubic-bezier(.22,1,.36,1), filter 200ms linear;
+  box-shadow:0 8px 24px -10px rgba(255,199,0,.55), inset 0 1px 0 rgba(255,255,255,.5);
+  transition:transform 120ms cubic-bezier(.32,.72,0,1), filter 160ms linear;
 }
-.y-ch-cta:hover{ transform:translateY(-1.5px); filter:brightness(1.05);
-  box-shadow:0 18px 40px -12px rgba(255,195,0,.75), inset 0 1px 0 rgba(255,255,255,.7); }
-.y-ch-cta:active{ transform:translateY(1px) scale(.993); transition-duration:110ms }
-.y-ch-cta:focus-visible{ outline:2px solid #FFF8E7; outline-offset:3px }
+.y-ch-cta:hover{ filter:brightness(1.04) }
+.y-ch-cta:active{ transform:scale(.97) }
+.y-ch-cta:focus-visible{ outline:2px solid #FFF8E7; outline-offset:2px }
 
+/* Tinted pill, as yellow glass. */
 .y-ch-ghost{
   display:inline-flex; align-items:center; justify-content:center;
-  height:44px; padding:0 18px; border-radius:14px; cursor:pointer;
-  font-size:14px; font-weight:600; letter-spacing:-.008em;
-  color:rgba(255,248,231,.72); background:transparent;
-  border:1px solid rgba(255,248,231,.14);
-  transition:color 200ms linear, border-color 200ms linear, background 200ms linear;
+  height:44px; padding:0 22px; border-radius:9999px; cursor:pointer;
+  text-decoration:none;
+  font-size:15px; font-weight:500; letter-spacing:-.01em;
+  color:#FFD60A;
+  background:linear-gradient(0deg, rgba(255,214,10,.14), rgba(255,214,10,.14)),
+             linear-gradient(0deg, rgba(255,255,255,.05), rgba(255,255,255,.05));
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
+  backdrop-filter:blur(18px) saturate(1.6);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);
+  transition:filter 180ms linear, transform 120ms cubic-bezier(.32,.72,0,1);
 }
-.y-ch-ghost:hover{ color:#FFF8E7; border-color:rgba(255,214,10,.4); background:rgba(255,214,10,.05) }
+.y-ch-ghost:hover{ filter:brightness(1.25) }
+@supports not (backdrop-filter: blur(1px)){
+  .y-ch-ghost{ background:rgba(60,48,10,.85) }
+}
+.y-ch-ghost:active{ transform:scale(.97) }
 .y-ch-ghost:focus-visible{ outline:2px solid #FFD60A; outline-offset:2px }
+
+/* The seam — hairline tracks that fill yellow, one half per person. */
+.y-ch-seam{ display:flex; align-items:center; gap:7px; width:66px; flex-shrink:0 }
+.y-ch-seg{
+  flex:1; height:1.5px; border-radius:2px; background:rgba(255,248,231,.12);
+  transition:background 420ms cubic-bezier(.32,.72,0,1);
+}
+.y-ch-seg-l.is-on{ background:linear-gradient(90deg, rgba(255,214,10,.14), #FFD60A) }
+.y-ch-seg-r.is-on{ background:linear-gradient(90deg, #FFD60A, rgba(255,214,10,.14)) }
+.y-ch-knot{
+  width:8px; height:8px; border-radius:9999px; flex-shrink:0; background:transparent;
+  box-shadow:inset 0 0 0 1px rgba(255,248,231,.24);
+  transition:background 420ms linear, box-shadow 420ms linear;
+}
+.y-ch-knot.is-on{ background:#FFD60A; box-shadow:0 0 14px rgba(255,214,10,.7) }
 
 @media (prefers-reduced-motion: reduce){
   .y-ch-bub{ animation-duration:1ms }
-  .y-ch-cta, .y-ch-play{ transition-duration:1ms }
+  .y-ch-cta, .y-ch-play, .y-ch-ghost, .y-ch-seg, .y-ch-knot{ transition-duration:1ms }
 }
 `}</style>
   );
@@ -192,18 +256,7 @@ function SeamSegment({ lit, side }: { lit: boolean; side: 'left' | 'right' }) {
   return (
     <span
       aria-hidden
-      style={{
-        flex: 1,
-        height: 2,
-        borderRadius: 2,
-        background: lit
-          ? side === 'left'
-            ? 'linear-gradient(90deg, rgba(255,214,10,.2), #FFD60A)'
-            : 'linear-gradient(90deg, #FFD60A, rgba(255,214,10,.2))'
-          : 'repeating-linear-gradient(90deg, rgba(255,248,231,.24) 0 3px, rgba(255,248,231,0) 3px 8px)',
-        boxShadow: lit ? '0 0 12px rgba(255,214,10,.55)' : 'none',
-        transition: 'background 400ms linear, box-shadow 400ms linear',
-      }}
+      className={`y-ch-seg y-ch-seg-${side === 'left' ? 'l' : 'r'}${lit ? ' is-on' : ''}`}
     />
   );
 }
@@ -211,29 +264,9 @@ function SeamSegment({ lit, side }: { lit: boolean; side: 'left' | 'right' }) {
 function Seam({ theirs, mine }: { theirs: boolean; mine: boolean }) {
   const closed = theirs && mine;
   return (
-    <span
-      aria-hidden
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        width: 62,
-        flexShrink: 0,
-      }}
-    >
+    <span aria-hidden className="y-ch-seam">
       <SeamSegment lit={theirs} side="left" />
-      <span
-        style={{
-          width: 9,
-          height: 9,
-          borderRadius: 9999,
-          flexShrink: 0,
-          background: closed ? '#FFD60A' : 'transparent',
-          border: closed ? 'none' : '1.5px dashed rgba(255,248,231,.3)',
-          boxShadow: closed ? '0 0 16px rgba(255,214,10,.8)' : 'none',
-          transition: 'all 400ms linear',
-        }}
-      />
+      <span className={`y-ch-knot${closed ? ' is-on' : ''}`} />
       <SeamSegment lit={mine} side="right" />
     </span>
   );
@@ -252,11 +285,13 @@ function GhostAvatar({ size }: { size: number }) {
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        border: '1.5px dashed rgba(255,248,231,.22)',
-        background: 'rgba(255,248,231,.03)',
+        boxShadow: 'inset 0 0 0 1px rgba(255,248,231,.14)',
+        background: 'rgba(255,255,255,.045)',
         fontFamily: MONO,
-        fontSize: size * 0.32,
-        color: 'rgba(255,248,231,.35)',
+        fontSize: size * 0.26,
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        color: 'rgba(255,248,231,.4)',
       }}
     >
       you
@@ -269,7 +304,7 @@ function GhostAvatar({ size }: { size: number }) {
 /* ------------------------------------------------------------------ */
 function VoiceBody({ message, mine }: { message: Message; mine: boolean }) {
   const duration = message.durationSec ?? 0;
-  const barCount = Math.min(30, Math.max(12, Math.round(duration * 2.2) || 18));
+  const barCount = Math.min(34, Math.max(24, Math.round(duration * 3.4) || 26));
   const bars = useMemo(
     () => waveBars(message.waveSeed ?? seedFromString(message.id), barCount),
     [message.waveSeed, message.id, barCount]
@@ -313,9 +348,8 @@ function VoiceBody({ message, mine }: { message: Message; mine: boolean }) {
     }
   }, [dead, message.id, message.s3Key, playing, resolving]);
 
-  const ink = mine ? 'rgba(26,18,0,' : 'rgba(255,214,10,';
-  const dim = mine ? 0.42 : 0.6;
-  const lit = mine ? 0.82 : 1;
+  const dim = mine ? 'rgba(26,18,0,.34)' : 'rgba(255,248,231,.3)';
+  const lit = mine ? 'rgba(26,18,0,.82)' : '#FFD60A';
 
   return (
     <span style={{ display: 'block' }}>
@@ -348,7 +382,10 @@ function VoiceBody({ message, mine }: { message: Message; mine: boolean }) {
           className="y-ch-play"
           onClick={() => void toggle()}
           disabled={dead}
-          style={{ background: `${ink}.15)`, color: mine ? '#1A1200' : '#FFD60A' }}
+          style={{
+            background: mine ? 'rgba(26,18,0,.14)' : 'rgba(255,214,10,.16)',
+            color: mine ? '#1A1200' : '#FFD60A',
+          }}
           aria-label={
             dead
               ? 'Playback unavailable'
@@ -358,22 +395,28 @@ function VoiceBody({ message, mine }: { message: Message; mine: boolean }) {
           }
         >
           {dead ? (
-            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+            <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
               <path
-                d="M1.2 1.2 8.8 8.8M8.8 1.2 1.2 8.8"
+                d="M1.6 1.6 9.4 9.4M9.4 1.6 1.6 9.4"
                 stroke="currentColor"
-                strokeWidth="1.4"
+                strokeWidth="1.5"
                 strokeLinecap="round"
               />
             </svg>
           ) : playing ? (
-            <svg width="9" height="10" viewBox="0 0 9 10" aria-hidden>
-              <rect x="0.6" y="0.6" width="2.8" height="8.8" rx="1" fill="currentColor" />
-              <rect x="5.6" y="0.6" width="2.8" height="8.8" rx="1" fill="currentColor" />
+            <svg width="10" height="11" viewBox="0 0 10 11" aria-hidden>
+              <rect x="0.8" y="0.6" width="3" height="9.8" rx="1.2" fill="currentColor" />
+              <rect x="6.2" y="0.6" width="3" height="9.8" rx="1.2" fill="currentColor" />
             </svg>
           ) : (
-            <svg width="9" height="10" viewBox="0 0 9 10" aria-hidden>
-              <path d="M1 1.2v7.6L8 5z" fill="currentColor" />
+            <svg width="10" height="11" viewBox="0 0 10 11" aria-hidden>
+              <path
+                d="M2 1.6 8.6 5.5 2 9.4Z"
+                fill="currentColor"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+              />
             </svg>
           )}
         </button>
@@ -392,12 +435,11 @@ function VoiceBody({ message, mine }: { message: Message; mine: boolean }) {
             <span
               key={i}
               style={{
-                flex: 1,
+                flex: '1 1 0',
                 minWidth: 2,
-                maxWidth: 3,
                 height: `${Math.round(h * 100)}%`,
                 borderRadius: 2,
-                background: `${ink}${(i + 1) / barCount <= progress ? lit : dim})`,
+                background: (i + 1) / barCount <= progress ? lit : dim,
               }}
             />
           ))}
@@ -406,10 +448,11 @@ function VoiceBody({ message, mine }: { message: Message; mine: boolean }) {
         <span
           style={{
             fontFamily: MONO,
-            fontSize: 10.5,
+            fontSize: 11,
             letterSpacing: '0.02em',
+            fontVariantNumeric: 'tabular-nums',
             flexShrink: 0,
-            color: mine ? 'rgba(26,18,0,.6)' : 'rgba(255,248,231,.5)',
+            color: mine ? 'rgba(26,18,0,.58)' : 'rgba(255,248,231,.45)',
           }}
         >
           {formatDuration(duration)}
@@ -421,9 +464,9 @@ function VoiceBody({ message, mine }: { message: Message; mine: boolean }) {
           style={{
             display: 'block',
             marginTop: 7,
-            fontSize: 12.5,
-            lineHeight: 1.42,
-            color: mine ? 'rgba(26,18,0,.66)' : 'rgba(255,248,231,.52)',
+            fontSize: 13.5,
+            lineHeight: 1.45,
+            color: mine ? 'rgba(26,18,0,.66)' : 'rgba(255,248,231,.62)',
           }}
         >
           {message.text}
@@ -436,15 +479,22 @@ function VoiceBody({ message, mine }: { message: Message; mine: boolean }) {
 /* ------------------------------------------------------------------ */
 /* Shells                                                               */
 /* ------------------------------------------------------------------ */
-function Eyebrow({ children }: { children: React.ReactNode }) {
+function Eyebrow({
+  children,
+  tone = 'quiet',
+}: {
+  children: React.ReactNode;
+  tone?: 'quiet' | 'gold';
+}) {
   return (
     <span
       style={{
         fontFamily: MONO,
-        fontSize: 9.5,
-        letterSpacing: '0.18em',
+        fontSize: 10.5,
+        fontWeight: 500,
+        letterSpacing: '0.14em',
         textTransform: 'uppercase',
-        color: 'rgba(255,248,231,.38)',
+        color: tone === 'gold' ? 'rgba(255,214,10,.72)' : 'rgba(255,248,231,.4)',
       }}
     >
       {children}
@@ -683,17 +733,46 @@ export default function ChatPage({
   if (!persona) {
     return (
       <CenteredShell>
-        <span aria-hidden style={{ fontSize: 34, lineHeight: 1 }}>
-          🫧
+        <span
+          aria-hidden
+          style={{
+            width: 46,
+            height: 46,
+            borderRadius: 9999,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'rgba(255,248,231,.55)',
+            background: 'rgba(255,255,255,.05)',
+            boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.1)',
+          }}
+        >
+          <svg width="22" height="22" viewBox="0 0 22 22">
+            <circle
+              cx="11"
+              cy="11"
+              r="8.2"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              fill="none"
+              opacity=".5"
+            />
+            <path
+              d="M7.4 7.4 14.6 14.6"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
         </span>
         <h1
           style={{
             fontFamily: SANS,
-            fontSize: 22,
-            fontWeight: 660,
-            letterSpacing: '-0.026em',
+            fontSize: 21,
+            fontWeight: 600,
+            letterSpacing: '-0.02em',
             color: '#FFF8E7',
-            margin: '16px 0 0',
+            margin: '18px 0 0',
           }}
         >
           That bubble popped
@@ -701,24 +780,20 @@ export default function ChatPage({
         <p
           style={{
             fontFamily: SANS,
-            fontSize: 14,
+            fontSize: 15,
             lineHeight: 1.5,
-            color: 'rgba(255,248,231,.5)',
+            color: 'rgba(255,248,231,.62)',
             margin: '8px 0 0',
-            maxWidth: 280,
+            maxWidth: 300,
           }}
         >
           There&rsquo;s nobody here under{' '}
-          <span style={{ fontFamily: MONO, color: 'rgba(255,248,231,.75)' }}>
+          <span style={{ fontFamily: MONO, fontSize: 13, color: 'rgba(255,248,231,.8)' }}>
             {id}
           </span>
           . They may have left, or the link is off.
         </p>
-        <Link
-          href="/home"
-          className="y-ch-ghost"
-          style={{ fontFamily: SANS, marginTop: 22, textDecoration: 'none' }}
-        >
+        <Link href="/home" className="y-ch-ghost" style={{ fontFamily: SANS, marginTop: 24 }}>
           Back to your bubbles
         </Link>
       </CenteredShell>
@@ -763,20 +838,20 @@ export default function ChatPage({
         <ChatStyles />
 
         {/* Back affordance stays available even while locked */}
-        <header className="flex shrink-0 items-center gap-3 pb-2 pt-4">
+        <header className="flex shrink-0 items-center gap-1.5 pb-2 pt-3">
           <button
             type="button"
-            className="y-ch-icon"
+            className="y-ch-icon y-ch-icon-lead"
             aria-label="Go back"
             // Always the conversation list, never history: arriving here from the
             // connect flow would otherwise send you back to the celebration screen.
             onClick={() => router.push('/chats')}
           >
-            <svg width="9" height="15" viewBox="0 0 9 15" aria-hidden>
+            <svg width="10" height="17" viewBox="0 0 10 17" aria-hidden>
               <path
-                d="M7.5 1L1.5 7.5L7.5 14"
+                d="M8.2 1.4 1.6 8.5l6.6 7.1"
                 stroke="currentColor"
-                strokeWidth="1.7"
+                strokeWidth="1.8"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 fill="none"
@@ -810,20 +885,20 @@ export default function ChatPage({
             )}
           </div>
 
-          <p style={{ margin: '30px 0 0' }}>
-            <Eyebrow>{copy.eyebrow}</Eyebrow>
+          <p style={{ margin: '32px 0 0' }}>
+            <Eyebrow tone="gold">{copy.eyebrow}</Eyebrow>
           </p>
 
           <h1
             style={{
               fontFamily: SANS,
-              fontSize: 26,
-              fontWeight: 600,
+              fontSize: 30,
+              fontWeight: 700,
               letterSpacing: '-0.03em',
-              lineHeight: 1.22,
+              lineHeight: 1.14,
               color: '#FFF8E7',
               margin: '12px 0 0',
-              maxWidth: 300,
+              maxWidth: 320,
             }}
           >
             {copy.title}
@@ -832,26 +907,25 @@ export default function ChatPage({
           <p
             style={{
               fontFamily: SANS,
-              fontSize: 14.5,
-              lineHeight: 1.55,
-              letterSpacing: '-0.006em',
-              color: 'rgba(255,248,231,.52)',
+              fontSize: 15,
+              lineHeight: 1.5,
+              color: 'rgba(255,248,231,.62)',
               margin: '12px 0 0',
-              maxWidth: 300,
+              maxWidth: 310,
             }}
           >
             {copy.body}
           </p>
 
-          <div style={{ width: '100%', maxWidth: 300, marginTop: 30 }}>
+          <div style={{ width: '100%', maxWidth: 300, marginTop: 32 }}>
             <Link
               href={`/connect/${persona.id}`}
               className="y-ch-cta"
-              style={{ fontFamily: SANS, textDecoration: 'none' }}
+              style={{ fontFamily: SANS }}
             >
               {copy.cta}
             </Link>
-            <p style={{ margin: '14px 0 0' }}>
+            <p style={{ margin: '16px 0 0' }}>
               <Eyebrow>Mutual intros only</Eyebrow>
             </p>
           </div>
@@ -869,28 +943,21 @@ export default function ChatPage({
 
       {/* Header */}
       <header
-        className={`sticky top-0 z-20 flex shrink-0 items-center gap-3 py-3 ${BLEED}`}
-        style={{
-          borderBottom: '1px solid rgba(255,214,10,.1)',
-          background:
-            'linear-gradient(180deg, rgba(23,20,12,.9) 0%, rgba(11,10,8,.72) 100%)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-        }}
+        className={`y-ch-bar y-ch-bar-top sticky top-0 z-20 flex shrink-0 items-center gap-2.5 py-2 ${BLEED}`}
       >
         <button
           type="button"
-          className="y-ch-icon"
+          className="y-ch-icon y-ch-icon-lead"
           aria-label="Go back"
           // Always the conversation list, never history: arriving here from the
           // connect flow would otherwise send you back to the celebration screen.
           onClick={() => router.push('/chats')}
         >
-          <svg width="9" height="15" viewBox="0 0 9 15" aria-hidden>
+          <svg width="10" height="17" viewBox="0 0 10 17" aria-hidden>
             <path
-              d="M7.5 1L1.5 7.5L7.5 14"
+              d="M8.2 1.4 1.6 8.5l6.6 7.1"
               stroke="currentColor"
-              strokeWidth="1.7"
+              strokeWidth="1.8"
               strokeLinecap="round"
               strokeLinejoin="round"
               fill="none"
@@ -900,8 +967,8 @@ export default function ChatPage({
 
         <Bubble
           profile={persona}
-          size={38}
-          prominence={0.75}
+          size={34}
+          prominence={0.6}
           interactive={false}
           showLabel={false}
         />
@@ -910,9 +977,9 @@ export default function ChatPage({
           <h1
             style={{
               fontFamily: SANS,
-              fontSize: 15.5,
-              fontWeight: 650,
-              letterSpacing: '-0.018em',
+              fontSize: 16.5,
+              fontWeight: 600,
+              letterSpacing: '-0.014em',
               lineHeight: 1.2,
               color: '#FFF8E7',
               margin: 0,
@@ -938,42 +1005,30 @@ export default function ChatPage({
                 height: 5,
                 borderRadius: 9999,
                 background: '#FFD60A',
-                boxShadow: '0 0 8px rgba(255,214,10,.85)',
               }}
             />
-            <span
-              style={{
-                fontFamily: MONO,
-                fontSize: 9.5,
-                letterSpacing: '0.16em',
-                textTransform: 'uppercase',
-                color: 'rgba(255,214,10,.72)',
-              }}
-            >
-              Connected
-            </span>
+            <Eyebrow tone="gold">Connected</Eyebrow>
           </span>
         </div>
 
         <Link
           href={`/connect/${persona.id}`}
-          className="y-ch-icon"
+          className="y-ch-icon y-ch-icon-tail"
           aria-label={`Open ${persona.name}'s profile`}
-          style={{ textDecoration: 'none' }}
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
             <circle
-              cx="7"
-              cy="7"
-              r="6.1"
+              cx="9"
+              cy="9"
+              r="7.4"
               stroke="currentColor"
-              strokeWidth="1.4"
+              strokeWidth="1.5"
               fill="none"
             />
             <path
-              d="M7 6.2v4M7 3.9v.1"
+              d="M9 8v4.4M9 5.5v.1"
               stroke="currentColor"
-              strokeWidth="1.5"
+              strokeWidth="1.7"
               strokeLinecap="round"
             />
           </svg>
@@ -987,7 +1042,7 @@ export default function ChatPage({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
+            gap: 12,
             marginBottom: 20,
           }}
         >
@@ -997,7 +1052,7 @@ export default function ChatPage({
               flex: 1,
               height: 1,
               background:
-                'linear-gradient(90deg, rgba(255,214,10,.02), rgba(255,214,10,.22))',
+                'linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.1))',
             }}
           />
           <Eyebrow>Unlocked &middot; both intros in</Eyebrow>
@@ -1007,7 +1062,7 @@ export default function ChatPage({
               flex: 1,
               height: 1,
               background:
-                'linear-gradient(90deg, rgba(255,214,10,.22), rgba(255,214,10,.02))',
+                'linear-gradient(90deg, rgba(255,255,255,.1), rgba(255,255,255,0))',
             }}
           />
         </div>
@@ -1017,17 +1072,17 @@ export default function ChatPage({
             style={{
               margin: 'auto',
               textAlign: 'center',
-              maxWidth: 250,
+              maxWidth: 260,
               paddingBottom: 30,
             }}
           >
             <p
               style={{
                 fontFamily: SANS,
-                fontSize: 16,
-                fontWeight: 560,
-                letterSpacing: '-0.018em',
-                color: 'rgba(255,248,231,.82)',
+                fontSize: 16.5,
+                fontWeight: 600,
+                letterSpacing: '-0.014em',
+                color: '#FFF8E7',
                 margin: 0,
               }}
             >
@@ -1038,7 +1093,7 @@ export default function ChatPage({
                 fontFamily: SANS,
                 fontSize: 13.5,
                 lineHeight: 1.5,
-                color: 'rgba(255,248,231,.42)',
+                color: 'rgba(255,248,231,.5)',
                 margin: '6px 0 0',
               }}
             >
@@ -1046,16 +1101,17 @@ export default function ChatPage({
             </p>
           </div>
         ) : (
-          rows.map(({ m, newDay, startsGroup, endsGroup }) => {
+          rows.map(({ m, newDay, startsGroup, endsGroup }, i) => {
             const mine = m.from === 'me';
             const unsent = failed.includes(m.id);
+            const glass = rows.length - i <= GLASS_TAIL;
             return (
               <div key={m.id} style={{ display: 'contents' }}>
                 {newDay ? (
                   <div
                     style={{
                       alignSelf: 'center',
-                      margin: '10px 0 14px',
+                      margin: '12px 0 14px',
                     }}
                   >
                     <Eyebrow>{dayLabel(m.at)}</Eyebrow>
@@ -1063,17 +1119,17 @@ export default function ChatPage({
                 ) : null}
 
                 <div
-                  className={`y-ch-bub ${mine ? 'y-ch-me' : 'y-ch-them'}${
-                    unsent ? ' y-ch-unsent' : ''
-                  }`}
+                  className={`y-ch-bub ${
+                    mine ? 'y-ch-me' : `y-ch-them${glass ? '' : ' y-ch-them-flat'}`
+                  }${unsent ? ' y-ch-unsent' : ''}`}
                   style={{
                     fontFamily: SANS,
-                    marginTop: startsGroup ? 0 : 3,
+                    marginTop: startsGroup ? 0 : 2,
                     borderRadius: mine
                       ? `18px 18px ${endsGroup ? '6px' : '18px'} 18px`
                       : `18px 18px 18px ${endsGroup ? '6px' : '18px'}`,
                     /* Voice notes need a wider, steadier box than text */
-                    minWidth: m.kind === 'voice' ? 216 : undefined,
+                    minWidth: m.kind === 'voice' ? 248 : undefined,
                   }}
                 >
                   {m.kind === 'voice' ? (
@@ -1088,7 +1144,7 @@ export default function ChatPage({
                     className="y-ch-unsent-note"
                     style={{
                       alignSelf: mine ? 'flex-end' : 'flex-start',
-                      margin: '5px 3px 12px',
+                      margin: '6px 4px 12px',
                       fontFamily: MONO,
                     }}
                   >
@@ -1098,10 +1154,12 @@ export default function ChatPage({
                   <span
                     style={{
                       alignSelf: mine ? 'flex-end' : 'flex-start',
-                      margin: '5px 3px 12px',
+                      margin: '6px 4px 12px',
                       fontFamily: MONO,
-                      fontSize: 9.5,
-                      letterSpacing: '0.1em',
+                      fontSize: 10.5,
+                      fontWeight: 500,
+                      letterSpacing: '0.06em',
+                      fontVariantNumeric: 'tabular-nums',
                       color: 'rgba(255,248,231,.26)',
                     }}
                   >
@@ -1119,15 +1177,8 @@ export default function ChatPage({
 
       {/* Composer */}
       <div
-        className={`sticky bottom-0 z-20 shrink-0 pt-3 ${BLEED}`}
-        style={{
-          paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-          borderTop: '1px solid rgba(255,214,10,.1)',
-          background:
-            'linear-gradient(180deg, rgba(11,10,8,.6) 0%, rgba(16,14,9,.95) 100%)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-        }}
+        className={`y-ch-bar y-ch-bar-bot sticky bottom-0 z-20 shrink-0 pt-2.5 ${BLEED}`}
+        style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom))' }}
       >
         <ChatComposer
           personName={persona.name}
