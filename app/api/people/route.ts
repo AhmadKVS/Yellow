@@ -18,7 +18,7 @@
  * `source: "fallback"`, so no page ever sees a failure.
  */
 
-import { PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb } from '@/lib/aws';
 import {
   DEMO_PEOPLE_ENABLED,
@@ -125,14 +125,21 @@ export async function POST(req: Request): Promise<Response> {
     // swapping the browser UUID for a Cognito `sub` needs no change here.
     const profile: DirectoryPerson = { ...raw.profile, id };
 
+    // An UpdateCommand, not a Put. A Put replaces the entire item, and this
+    // row also carries `voiceIntro` (written by /api/intro) and the `demo`
+    // flag — so publishing a profile edit would silently delete the voice
+    // intro the person recorded. `setProfile` publishes on every save, which
+    // made that a matter of when, not if.
     await ddb.send(
-      new PutCommand({
+      new UpdateCommand({
         TableName: USERS_TABLE_NAME,
-        Item: {
-          userId: id,
-          profile,
-          updatedAt: Date.now(),
+        Key: { userId: id },
+        UpdateExpression: 'SET #profile = :profile, #updatedAt = :now',
+        ExpressionAttributeNames: {
+          '#profile': 'profile',
+          '#updatedAt': 'updatedAt',
         },
+        ExpressionAttributeValues: { ':profile': profile, ':now': Date.now() },
       }),
       { abortSignal: controller.signal },
     );

@@ -1,3 +1,5 @@
+import type { VoiceIntro } from './intro';
+
 export interface Profile {
   id: string;
   name: string;
@@ -11,6 +13,8 @@ export interface Profile {
 export interface SeedPersona extends Profile {
   intro: { who: string; building: string; lookingFor: string };
   cannedReplies: string[];
+  /** Present only when this person actually recorded one. Never synthesised. */
+  voiceIntro?: VoiceIntro;
 }
 
 export type ConnectionStage = 'stranger' | 'nudged' | 'intro_pending' | 'connected';
