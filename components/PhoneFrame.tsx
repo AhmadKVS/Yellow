@@ -10,7 +10,7 @@ interface SessionUser {
 }
 
 /** Signed-in identity + the only way out of the app. */
-function AccountFooter() {
+function AccountFooter({ variant = 'sidebar' }: { variant?: 'sidebar' | 'strip' }) {
   const router = useRouter();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,6 +39,27 @@ function AccountFooter() {
     }
     router.replace('/login');
     router.refresh();
+  }
+
+  // Compact horizontal row for mobile, where the sidebar is hidden and this
+  // would otherwise be the only screen size with no way to sign out.
+  if (variant === 'strip') {
+    if (!user) return null;
+    return (
+      <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-5 py-2">
+        <span className="truncate text-[11.5px] text-[#FFF8E7]/45">
+          {user.name || user.email}
+        </span>
+        <button
+          type="button"
+          onClick={signOut}
+          disabled={busy}
+          className="shrink-0 text-[11.5px] text-[#FFD60A]/70 transition-colors duration-200 active:text-[#FFD60A] disabled:opacity-50"
+        >
+          {busy ? 'Signing out…' : 'Sign out'}
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -149,6 +170,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
 
           {!chromeless && (
             <div className="md:hidden">
+              <AccountFooter variant="strip" />
               <TabBar orientation="bottom" />
             </div>
           )}

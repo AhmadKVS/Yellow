@@ -14,7 +14,11 @@ frontend:
         # to server code at request time. `|| true` because grep exits 1 when it
         # matches nothing, which would otherwise fail the whole build.
         # https://docs.aws.amazon.com/amplify/latest/userguide/ssr-environment-variables.html
-        - env | grep -e YELLOW_ -e NEXT_PUBLIC_ >> .env.production || true
+        #
+        # COGNITO_ must be included: proxy.ts treats a missing pool id as
+        # "auth isn't configured" and deliberately fails OPEN, so omitting
+        # these ships an app with no login wall at all.
+        - env | grep -e YELLOW_ -e NEXT_PUBLIC_ -e COGNITO_ >> .env.production || true
         # Turbopack is the Next 16 default. Do NOT add --turbopack.
         - npm run build
   artifacts:
