@@ -16,7 +16,9 @@ Named for the colour psychology: openness, warmth, growth.
 ## The core loop
 
 1. **Onboarding** — you write a free-text blurb about yourself. Claude (via Bedrock)
-   extracts your soft skills and interests as tags. You confirm and edit them.
+   extracts your soft skills and interests as tags. You confirm and edit them, pick
+   a name and an emoji avatar (or upload a photo instead), and the blurb itself is
+   kept as your `bio` — readable in full later, not just the truncated tagline.
 2. **Bubble map** — an Apple-Watch-style floating cluster. You sit at the centre;
    everyone else orbits, **sized and positioned by how much you overlap**. Bigger and
    closer means more shared. Drag to pan, scroll to zoom.
@@ -26,8 +28,11 @@ Named for the colour psychology: openness, warmth, growth.
    building? / What are you looking for?* by voice. **Neither can DM until both have
    sent.** A split-node rail visualises the rule as you satisfy it.
 5. **DM unlocks** — 1:1 chat opens.
-6. **Project hubs** — per-project rosters. Entrepreneurs juggle several ventures; you
+6. **Project hubs** — a shared workspace per project: an updates/questions feed and a
+   task board with assignees and deadlines. Entrepreneurs juggle several ventures; you
    don't need everyone on everything.
+7. **Settings** — the editable home for everything onboarding collected, and the only
+   place to record a voice intro outside a connection flow.
 
 ---
 
@@ -38,8 +43,8 @@ Named for the colour psychology: openness, warmth, growth.
 | Framework | **Next.js 16.2.11** (App Router, Turbopack default) |
 | UI | React 19.2.4, **Tailwind v4** (CSS-first), Geist Sans/Mono |
 | Auth | **Amazon Cognito** — email + password, custom UI, server-side |
-| Data | **DynamoDB** — `yellow-app` (per-user state), `yellow-users` (directory) |
-| Files | **S3** — `yellow-voice-563923432327` (voice notes, presigned URLs) |
+| Data | **DynamoDB** — `yellow-app` (per-user state + `pair#` rows), `yellow-users` (public directory), `yellow-hubs` (shared hubs), `yellow-hub-items` (hub posts + tasks) |
+| Files | **S3** — `yellow-voice-563923432327` (voice notes under `audio/`, private + presigned; profile photos under `photos/`, public-read) |
 | AI | **Amazon Bedrock** — Claude Haiku 4.5 for tag extraction |
 | Hosting | **AWS Amplify** (SSR / WEB_COMPUTE) |
 
@@ -72,9 +77,15 @@ common source of wasted time here:
 
 ### Data model (`lib/types.ts` — the frozen contract)
 
-`Profile` · `SeedPersona` (adds `intro` + `cannedReplies`) · `Connection`
+`Profile` (`emoji` + optional `photoUrl` — one avatar, two ways to set it — plus
+optional `bio`, the full onboarding write-up; `tagline` stays a short derived
+excerpt) · `SeedPersona` (adds `intro` + `cannedReplies`) · `Connection`
 (`stranger → nudged → intro_pending → connected`) · `Message` · `Hub` · `AppState`
 · `MatchResult`.
+
+New fields on `Profile` are additive and optional on purpose — every existing
+reader keeps working untouched. That's the sanctioned way to extend a "frozen"
+type; renaming or removing a field is what actually ripples.
 
 ### The pair record (`lib/pair.ts` · `lib/pairServer.ts`)
 
@@ -102,6 +113,31 @@ append-only `messages` list. Rules that must survive any edit:
 Voice intros are recorded once and stored as `voiceIntro` on the user's `yellow-users`
 directory row; the audio itself sits in S3 under `audio/<ownerId>/<messageId>.webm` and
 is presigned at read time, never stored as a URL.
+
+### Shared hubs (`lib/hubs.ts` · `lib/hubsServer.ts`)
+
+Hubs originally lived in `state.hubs` inside each user's private blob, so "adding"
+someone wrote only to the *adder's* row and the invitee saw nothing. They are now
+shared objects in their own tables:
+
+- **`yellow-hubs`** — PK `hubId`. Holds `ownerId`, `memberIds`, name/emoji/one-liner.
+- **`yellow-hub-items`** — PK `hubId` + SK `itemId`. Posts and tasks live together;
+  `itemId` is `post#<ms>#<rand>` / `task#<ms>#<rand>`, so **one `Query` by `hubId`
+  returns the whole workspace already ordered** with no second index.
+
+`AppState` still declares `hubs`, but the store's own state is
+`LocalAppState = Omit<AppState, 'hubs'>`. Subtracting the field rather than emptying
+it means **the compiler** guarantees no `hubs` key can reach localStorage or the state
+row — not a convention someone has to remember.
+
+Permissions: owner adds/removes members; anyone may remove themselves; an owner
+leaving is a 409 (delete the hub instead). Tasks are a shared board — any member can
+advance or assign. Posts are author-only to edit. Non-members get 403, so a hub's
+contents are exactly as private as its roster.
+
+**Identity is always `getSession()?.sub` from the httpOnly cookie**, never a body or
+query field. `/api/state` still trusts a caller-supplied `userId`; that's a known gap
+on the roadmap and must not be copied into new routes.
 
 ### Matching (`lib/match.ts`)
 

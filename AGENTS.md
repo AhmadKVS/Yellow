@@ -25,18 +25,31 @@ Amplify.
 ## Invariants — do not break these
 
 - **`lib/types.ts` is a frozen contract.** Changing it ripples through every screen.
+  Additive, optional fields (e.g. `Profile.photoUrl`) are the one safe way to extend
+  it — every existing reader that ignores unknown fields keeps working unchanged.
+  Anything else (renaming, removing, widening required shape) is not safe.
 - **`lib/store.tsx`**: `hydrated` must always end `true` (three independent paths);
   the `revision` dirty-counter must keep gating persistence; `savedAt` drives
   last-write-wins. Breaking any of these hangs the app or destroys cloud state.
 - **State is keyed by the Cognito `sub`**, resolved before the first read. Never key
   on a literal like `"me"` — that made every account share one row.
-- **Directory `people` never enter the persisted blob** (not localStorage, not the
-  state row).
-- **Fail-soft is a feature, not an oversight.** Bedrock, the directory, S3, and the
-  mic all degrade silently. The auth wall *deliberately* fails open when Cognito is
-  unconfigured, because locking an app with no working auth is unrecoverable.
+- **Directory `people` and shared `hubs` never enter the persisted blob** (not
+  localStorage, not the state row). `LocalAppState = Omit<AppState, 'hubs'>` enforces
+  this for hubs at the type level — don't widen `LocalAppState` back to `AppState`.
+- **Fail-soft is a feature, not an oversight.** Bedrock, the directory, S3, hubs, and
+  the mic all degrade silently. The auth wall *deliberately* fails open when Cognito
+  is unconfigured, because locking an app with no working auth is unrecoverable.
 - **Bedrock model ID must be `us.anthropic.claude-haiku-4-5-20251001-v1:0`.** The
   un-prefixed ID fails with a misleading on-demand-throughput error.
+- **The `yellow-voice-...` S3 bucket is private except one carve-out.** `photos/*`
+  is public-read (see `PRIMER.md`) so profile photos load as plain `<img src>` with
+  no per-viewer presign. Every other prefix (`audio/*`) stays private, presigned
+  reads only. Don't widen the bucket policy beyond `photos/*`.
+- **`BubbleField`'s pan/zoom must never call `setPointerCapture` when a pointerdown
+  starts on a `<button>`.** Capturing there silently retargets the matching
+  `pointerup`/`click` to the container instead of the button, so the tap does
+  nothing — this broke every bubble/profile click for a while. See the check in
+  `onPointerDown`.
 
 ## Conventions
 

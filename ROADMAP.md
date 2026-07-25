@@ -76,6 +76,28 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
 - **In-app notifications** — a toast on connect and on a new message, an unread dot on
   the Chats tab and sidebar item, and per-thread unread counts in `/chats`.
 
+### Hours 10–12 · Shared hubs, settings, photos
+- **Hubs became real shared objects.** They lived in each user's private state blob,
+  so adding someone wrote only to the adder's row and the invitee saw nothing —
+  which is also why a hub felt pointless. Now `yellow-hubs` + `yellow-hub-items`,
+  keyed off the session's Cognito `sub`. Verified with two real accounts: A creates,
+  A adds B, **B sees it**, B posts, A sees the post.
+- **A hub is now a workspace, not a roster** — an updates/questions feed and a task
+  board with assignees, due dates and overdue highlighting. The list shows live
+  signal ("3 open tasks · 1 overdue · last update 2h ago"), and each hub surfaces the
+  members' combined tag coverage so it reads as a team assembled around a project.
+- **Invite control inside the hub**, next to "just you so far" — the moment someone
+  actually wants to fix an empty hub. Owner-only, offers only connected people, and
+  all three empty cases speak.
+- **Settings** (`/settings`) — name, emoji, tagline and tags all editable for the
+  first time, plus the only route to record a voice intro outside a connection flow.
+  The not-yet-recorded state leads the page, because without one nobody can connect
+  with you at all.
+- **Profile photos** — public-read `photos/*` carve-out on the S3 bucket so avatars
+  load as plain `<img>` with no per-viewer presign; every other prefix stays private.
+- Fixed a dead end: the empty-state "Edit your tags" button pointed at `/onboarding`,
+  which bounces anyone with a profile straight back to `/home`. It did nothing.
+
 ---
 
 ## Next up 🎯
@@ -96,9 +118,10 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
 - [ ] **Same-browser account switching** briefly shows the previous user's profile
       (localStorage wins on `savedAt` before cloud reconciles). Fine across devices;
       avoid demoing two accounts in one window.
-- [ ] **9 lint errors** (`react-hooks/refs`, writing refs during render) in
-      `BubbleField`, `MatchNudge`, `ProfileCard`. Cosmetic — build and runtime are
-      unaffected — but they should be moved into effects.
+- [ ] **16 lint problems** (10 errors, 6 warnings) — `react-hooks/refs` writes during
+      render in `BubbleField`, `MatchNudge`, `ProfileCard`, plus a few in `settings`
+      and `onboarding`. Cosmetic: `tsc` is clean and `next build` passes (Next 16 no
+      longer lints during build). The ref writes belong in effects.
 - [ ] **Console noise on `/login` and `/signup`**: the store fires `/api/state` and
       `/api/people` while signed out and the wall correctly 401s them. Harmless, but
       visible with devtools open. Skip those fetches on public routes.
@@ -113,7 +136,12 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
 - [ ] **Presigned playback URLs are cached in-session and expire after an hour**; a tab
       left open longer than that serves a dead URL until reload. Cache the expiry
       alongside the URL and re-presign on miss.
-- [ ] Hubs are list/create/add-member only. No hub chat, no tasks.
+- [ ] Hub items have no edit-in-place for posts and no comment threads on a task —
+      the feed is append-and-delete. Fine for a demo; thin for real use.
+- [ ] `GET /api/hubs` is a `Scan` with `contains(memberIds, :me)`. Correct but reads
+      every hub row per poll; needs a GSI (member → hubs) before real volume.
+- [ ] Hub activity raises no notification. A task assigned to you or a question aimed
+      at you should surface the same way a new message does.
 - [ ] Match nudges are computed client-side on load. Real notifications need a
       server-side job.
 
