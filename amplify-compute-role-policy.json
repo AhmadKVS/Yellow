@@ -1,0 +1,63 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AppStateAndUserDirectory",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Scan",
+        "dynamodb:Query"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:us-east-2:563923432327:table/yellow-app",
+        "arn:aws:dynamodb:us-east-2:563923432327:table/yellow-users"
+      ]
+    },
+    {
+      "Sid": "VoiceNoteStorage",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::yellow-voice-563923432327/*"
+    },
+    {
+      "Sid": "VoiceNoteBucketListing",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::yellow-voice-563923432327"
+    },
+    {
+      "Sid": "ClaudeViaBedrock",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/anthropic.*",
+        "arn:aws:bedrock:*:563923432327:inference-profile/*"
+      ]
+    },
+    {
+      "Sid": "CognitoSignupAndLogin",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:SignUp",
+        "cognito-idp:ConfirmSignUp",
+        "cognito-idp:InitiateAuth",
+        "cognito-idp:ResendConfirmationCode",
+        "cognito-idp:ForgotPassword",
+        "cognito-idp:ConfirmForgotPassword",
+        "cognito-idp:GetUser"
+      ],
+      "Resource": "arn:aws:cognito-idp:us-east-2:563923432327:userpool/us-east-2_QkPPYCzm5"
+    }
+  ]
+}
