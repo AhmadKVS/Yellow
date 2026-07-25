@@ -1,0 +1,30 @@
+# AWS Amplify Hosting build spec - Yellow (Next.js 16, App Router, SSR)
+# Reference: https://docs.aws.amazon.com/amplify/latest/userguide/deploy-nextjs-app.html
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        # package-lock.json is committed, so use the reproducible install.
+        - npm ci
+    build:
+      commands:
+        # Amplify console env vars reach the BUILD but not the SSR runtime.
+        # Writing them to .env.production is the documented way to expose them
+        # to server code at request time. `|| true` because grep exits 1 when it
+        # matches nothing, which would otherwise fail the whole build.
+        # https://docs.aws.amazon.com/amplify/latest/userguide/ssr-environment-variables.html
+        - env | grep -e YELLOW_ -e NEXT_PUBLIC_ >> .env.production || true
+        # Turbopack is the Next 16 default. Do NOT add --turbopack.
+        - npm run build
+  artifacts:
+    # .next (NOT "out") is what makes Amplify deploy this as a WEB_COMPUTE SSR
+    # app. Setting "out" here silently ships a static site and every route under
+    # app/api/ returns 404.
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+      - .next/cache/**/*
