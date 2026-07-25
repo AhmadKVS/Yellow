@@ -25,10 +25,6 @@ const STEP_SWAP_MS = 190;
 /** If the config probe stalls, show the form anyway rather than a dead gate. */
 const PROBE_CEILING_MS = 1500;
 
-/** Build-time flag. The wall only exists when this is exactly "true"; with it
- *  off, these screens are a door you can walk past, not a gate. */
-const AUTH_REQUIRED = process.env.NEXT_PUBLIC_AUTH_REQUIRED === 'true';
-
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Cognito's documented symbol set for the default password policy. Kept as
@@ -327,9 +323,13 @@ export default function SignupPage() {
   const [resending, setResending] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
 
-  /* Probe: is auth even switched on? */
+  /* Probe: is auth even switched on?
+     `enforced` is read at runtime rather than from the NEXT_PUBLIC_ flag at
+     build time — a stale inlined constant can dead-code-eliminate the escape
+     hatch below, and this screen must never become a dead end. */
   const [ready, setReady] = useState(false);
   const [configured, setConfigured] = useState(true);
+  const [enforced, setEnforced] = useState(false);
 
   const alive = useRef(true);
   const codeRef = useRef<HTMLInputElement>(null);
@@ -353,11 +353,16 @@ export default function SignupPage() {
       try {
         const res = await fetch('/api/auth/me', { cache: 'no-store' });
         const data = (await res.json()) as Record<string, unknown>;
-        if (!cancelled) setConfigured(data.configured === true);
+        if (cancelled) return;
+        setConfigured(data.configured === true);
+        setEnforced(data.enforced === true);
       } catch {
         /* Probe failed — treat auth as off. Failing towards "come in"
            is always the right direction here. */
-        if (!cancelled) setConfigured(false);
+        if (!cancelled) {
+          setConfigured(false);
+          setEnforced(false);
+        }
       } finally {
         if (!cancelled) setReady(true);
         window.clearTimeout(ceiling);
@@ -747,7 +752,7 @@ export default function SignupPage() {
                 </Link>
               </p>
 
-              {!AUTH_REQUIRED ? (
+              {!enforced ? (
                 <p className="ya-footnote" style={{ marginTop: 8 }}>
                   <Link href="/" className="ya-link">
                     Skip for now

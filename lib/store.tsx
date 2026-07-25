@@ -27,6 +27,7 @@ import {
   fetchPeople,
   publishProfile,
   resolveDirectoryId,
+  resolveIdentity,
   type PeopleSource,
 } from './people';
 
@@ -35,7 +36,6 @@ import {
 /* -------------------------------------------------------------------------- */
 
 const STORAGE_KEY = 'yellow:v1';
-const USER_ID = 'me';
 
 /** How long we sit on mutations before pushing them to DynamoDB. */
 const CLOUD_DEBOUNCE_MS = 800;
@@ -321,8 +321,11 @@ function clearLocal(): void {
   }
 }
 
-async function readCloud(signal: AbortSignal): Promise<{ app: AppState; savedAt: number } | null> {
-  const res = await fetch(`/api/state?userId=${encodeURIComponent(USER_ID)}`, {
+async function readCloud(
+  userId: string,
+  signal: AbortSignal,
+): Promise<{ app: AppState; savedAt: number } | null> {
+  const res = await fetch(`/api/state?userId=${encodeURIComponent(userId)}`, {
     signal,
     cache: 'no-store',
   });
@@ -382,31 +385,52 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
   const pushSeqRef = useRef(0);
   const mountedRef = useRef(true);
 
+  /**
+   * Who this session is. The Cognito `sub` once auth answers, this browser's
+   * UUID otherwise — and it is the DynamoDB key for *this user's* state row,
+   * so two accounts can never read or clobber each other's messages.
+   * Mirrored into a ref so `pushCloud` can stay referentially stable.
+   */
+  const [identity, setIdentity] = useState<string | null>(null);
+  const identityRef = useRef<string | null>(null);
+  const adoptIdentity = useCallback((id: string) => {
+    identityRef.current = id;
+    setIdentity(id);
+  }, []);
+  /** Only ever called after identity is settled (writes need a mutation). */
+  const currentUserId = useCallback(
+    () => identityRef.current ?? resolveDirectoryId(),
+    [],
+  );
+
   /* ---------------------------------------------------------------------- */
   /* cloud push                                                             */
   /* ---------------------------------------------------------------------- */
 
-  const pushCloud = useCallback((blob: PersistedState, keepalive = false) => {
-    pendingRef.current = null;
-    const seq = ++pushSeqRef.current;
-    if (mountedRef.current) setCloudStatus('syncing');
+  const pushCloud = useCallback(
+    (blob: PersistedState, keepalive = false) => {
+      pendingRef.current = null;
+      const seq = ++pushSeqRef.current;
+      if (mountedRef.current) setCloudStatus('syncing');
 
-    fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: USER_ID, state: blob }),
-      keepalive,
-    })
-      .then((res) => {
-        if (!mountedRef.current || seq !== pushSeqRef.current) return;
-        setCloudStatus(res.ok ? 'synced' : 'error');
+      fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId(), state: blob }),
+        keepalive,
       })
-      .catch(() => {
-        // Cloud failures are silent and never block the UI.
-        if (!mountedRef.current || seq !== pushSeqRef.current) return;
-        setCloudStatus('error');
-      });
-  }, []);
+        .then((res) => {
+          if (!mountedRef.current || seq !== pushSeqRef.current) return;
+          setCloudStatus(res.ok ? 'synced' : 'error');
+        })
+        .catch(() => {
+          // Cloud failures are silent and never block the UI.
+          if (!mountedRef.current || seq !== pushSeqRef.current) return;
+          setCloudStatus('error');
+        });
+    },
+    [currentUserId],
+  );
 
   /* ---------------------------------------------------------------------- */
   /* hydration — must ALWAYS end with hydrated: true                        */
@@ -435,10 +459,14 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       /* ignore — cloud may still save us, and READY always fires */
     }
 
-    // 2. Cloud in parallel; adopt only if strictly newer than what we have.
+    // 2. Identity, then that user's cloud row; adopt only if strictly newer
+    //    than what we have. Identity has to come first — reading the wrong
+    //    row would hand one account another account's messages.
     void (async () => {
       try {
-        const cloud = await readCloud(controller.signal);
+        const id = await resolveIdentity();
+        if (id) adoptIdentity(id);
+        const cloud = await readCloud(id || resolveDirectoryId(), controller.signal);
         if (mountedRef.current && cloud && cloud.savedAt > localSavedAt) {
           dispatch({ type: 'HYDRATE', state: cloud.app, savedAt: cloud.savedAt });
         }
@@ -458,7 +486,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       clearTimeout(deadline);
       controller.abort();
     };
-  }, []);
+  }, [adoptIdentity]);
 
   /* ---------------------------------------------------------------------- */
   /* people directory — live, and deliberately NOT persisted                */
@@ -466,9 +494,9 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
   /* This lives in plain `useState`, entirely outside the `useReducer` store */
   /* that persistence reads from. `toBlob()` only ever serialises            */
   /* `store.app`, so the directory structurally cannot reach localStorage or */
-  /* the userId="me" row — there is nothing to strip. It also can't trigger  */
-  /* a write: the persistence effect below depends on `[store, pushCloud]`,  */
-  /* neither of which these setters touch.                                   */
+  /* this user's state row — there is nothing to strip. It also can't        */
+  /* trigger a write: the persistence effect below depends on                */
+  /* `[store, pushCloud]`, neither of which these setters touch.             */
   /* ---------------------------------------------------------------------- */
 
   const [people, setPeople] = useState<SeedPersona[]>(FALLBACK_PEOPLE);
@@ -480,14 +508,20 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
-    // Prefers an authenticated identity (Cognito `sub`) when one exists,
-    // otherwise this browser's stable UUID. Resolved in an effect so it is
-    // never touched during SSR.
-    const myId = resolveDirectoryId();
 
     const load = async (initial: boolean) => {
+      // Identity first, every time: asking for the directory before we know
+      // who we are would put the user's own bubble in their own orbit. The
+      // result is cached module-side, so this costs one request per page.
+      const myId = await resolveIdentity();
+      if (!active) return;
+      if (myId) adoptIdentity(myId);
+
       // fetchPeople never throws and never hangs past its own timeout.
-      const result = await fetchPeople({ excludeId: myId, signal: controller.signal });
+      const result = await fetchPeople({
+        excludeId: myId || resolveDirectoryId(),
+        signal: controller.signal,
+      });
       if (!active) return;
       // A failed refresh must never wipe a directory we already loaded.
       if (!initial && result.source !== 'dynamodb') return;
@@ -517,7 +551,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       document.removeEventListener('visibilitychange', refresh);
       controller.abort();
     };
-  }, []);
+  }, [adoptIdentity]);
 
   /* ---------------------------------------------------------------------- */
   /* persistence — local sync, cloud debounced                              */
@@ -557,17 +591,26 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
   /* stable helpers                                                         */
   /* ---------------------------------------------------------------------- */
 
-  const setProfile = useCallback((profile: Profile) => {
-    dispatch({ type: 'SET_PROFILE', profile });
-    // Publish into the shared directory so other browsers can discover this
-    // person. Strictly fire-and-forget — it can never fail onboarding, and
-    // it never touches the persisted state blob.
-    try {
-      void publishProfile(profile);
-    } catch {
-      /* discovery is best-effort */
-    }
-  }, []);
+  const setProfile = useCallback(
+    (profile: Profile) => {
+      // Stamp our real id onto the profile. Onboarding writes a placeholder;
+      // using the identity here is what makes `excludeId` and the connection
+      // keys other people see line up with this account.
+      const id = currentUserId();
+      const owned: Profile = { ...profile, id };
+      dispatch({ type: 'SET_PROFILE', profile: owned });
+
+      // Publish into the shared directory so other browsers can discover this
+      // person. Strictly fire-and-forget — it can never fail onboarding, and
+      // it never touches the persisted state blob.
+      try {
+        void publishProfile(owned, id);
+      } catch {
+        /* discovery is best-effort */
+      }
+    },
+    [currentUserId],
+  );
 
   const ensureConnection = useCallback((personId: string) => {
     dispatch({ type: 'ENSURE_CONNECTION', personId });
@@ -628,10 +671,23 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
     dispatch({ type: 'RESET' });
   }, [pushCloud]);
 
+  /**
+   * Last line of defence against seeing yourself in your own orbit. The route
+   * already excludes us server-side, but a row published under an older id
+   * (a pre-auth browser UUID, say) would slip through — so drop anything
+   * matching either id we answer to.
+   */
+  const visiblePeople = useMemo(() => {
+    const mine = new Set([identity, store.app.me?.id].filter(Boolean) as string[]);
+    if (mine.size === 0) return people;
+    const filtered = people.filter((p) => !mine.has(p.id));
+    return filtered.length === people.length ? people : filtered;
+  }, [people, identity, store.app.me?.id]);
+
   const value = useMemo<AppStateApi>(
     () => ({
       state: store.app,
-      people,
+      people: visiblePeople,
       peopleSource,
       setProfile,
       ensureConnection,
@@ -649,7 +705,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
     }),
     [
       store.app,
-      people,
+      visiblePeople,
       peopleSource,
       setProfile,
       ensureConnection,

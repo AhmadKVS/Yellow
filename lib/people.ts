@@ -82,6 +82,15 @@ export function setDirectoryIdentity(id: string | null | undefined): void {
   writeStored(AUTH_ID_STORAGE_KEY, next);
 }
 
+/** Forget a stored identity — used only on a *definitive* signed-out answer. */
+export function clearDirectoryIdentity(): void {
+  try {
+    window.localStorage.removeItem(AUTH_ID_STORAGE_KEY);
+  } catch {
+    /* nothing to clear */
+  }
+}
+
 /**
  * The id this browser publishes under, preferring a real authenticated
  * identity and falling back to a stable per-browser UUID. Client-only.
@@ -96,6 +105,54 @@ export function resolveDirectoryId(): string {
   const minted = mintId();
   writeStored(BROWSER_ID_STORAGE_KEY, minted);
   return minted;
+}
+
+/**
+ * Resolves *the* id this session belongs to: the Cognito `sub` when signed in,
+ * the per-browser UUID otherwise. Cached for the page's lifetime — identity
+ * only changes across a login/logout navigation — so the many callers that
+ * need it cost one request between them.
+ *
+ * Client-only, and never throws: an unreachable `/api/auth/me` simply means
+ * we keep whatever we already had.
+ */
+let identityPromise: Promise<string> | null = null;
+
+export function resolveIdentity(): Promise<string> {
+  if (typeof window === 'undefined') return Promise.resolve('');
+  if (!identityPromise) {
+    identityPromise = readIdentity().catch(() => resolveDirectoryId());
+  }
+  return identityPromise;
+}
+
+async function readIdentity(): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), IDENTITY_TIMEOUT_MS);
+  try {
+    const res = await fetch('/api/auth/me', {
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const body: unknown = await res.json();
+      const user = (body as { user?: { sub?: unknown } | null } | null)?.user;
+      const sub = typeof user?.sub === 'string' ? user.sub.trim() : '';
+      if (sub) {
+        setDirectoryIdentity(sub);
+        return sub;
+      }
+      // A definitive "signed out" — drop a stale sub so the next person on
+      // this browser doesn't inherit the last one's identity.
+      if (user === null) clearDirectoryIdentity();
+    }
+  } catch {
+    // Indeterminate. Don't cache the failure: a later call gets to retry.
+    identityPromise = null;
+  } finally {
+    clearTimeout(timer);
+  }
+  return resolveDirectoryId();
 }
 
 function mintId(): string {
@@ -127,6 +184,11 @@ export const FALLBACK_PEOPLE: SeedPersona[] = DEMO_PEOPLE_ENABLED
 /** Never block a render on the network for longer than this. */
 const FETCH_TIMEOUT_MS = 4_000;
 const PUBLISH_TIMEOUT_MS = 4_000;
+/**
+ * Deliberately tight: identity is a local cookie decode, and hydration's own
+ * 3.5s deadline has to fit this *plus* the cloud state read behind it.
+ */
+const IDENTITY_TIMEOUT_MS = 900;
 
 /* -------------------------------------------------------------------------- */
 /* validation                                                                 */

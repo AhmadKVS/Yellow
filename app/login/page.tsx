@@ -23,10 +23,6 @@ const STEP_SWAP_MS = 190;
 /** If the config probe stalls, show the form anyway rather than a dead gate. */
 const PROBE_CEILING_MS = 1500;
 
-/** Build-time flag. The wall only exists when this is exactly "true"; with it
- *  off, these screens are a door you can walk past, not a gate. */
-const AUTH_REQUIRED = process.env.NEXT_PUBLIC_AUTH_REQUIRED === 'true';
-
 const srOnly: CSSProperties = {
   position: 'absolute',
   width: 1,
@@ -303,9 +299,13 @@ export default function LoginPage() {
   const [resending, setResending] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
 
-  /* Probe: is auth even switched on, and are we already signed in? */
+  /* Probe: is auth even switched on, and are we already signed in?
+     `enforced` is read at runtime rather than from the NEXT_PUBLIC_ flag at
+     build time — a stale inlined constant can dead-code-eliminate the escape
+     hatch below, and this screen must never become a dead end. */
   const [ready, setReady] = useState(false);
   const [configured, setConfigured] = useState(true);
+  const [enforced, setEnforced] = useState(false);
   const [signedInAs, setSignedInAs] = useState<string | null>(null);
 
   const alive = useRef(true);
@@ -333,12 +333,16 @@ export default function LoginPage() {
         const data = (await res.json()) as Record<string, unknown>;
         if (cancelled) return;
         setConfigured(data.configured === true);
+        setEnforced(data.enforced === true);
         const user = data.user as { name?: string; email?: string } | null;
         setSignedInAs(user ? user.name || user.email || 'your account' : null);
       } catch {
         /* Probe failed — treat auth as off. Failing towards "come in"
            is always the right direction here. */
-        if (!cancelled) setConfigured(false);
+        if (!cancelled) {
+          setConfigured(false);
+          setEnforced(false);
+        }
       } finally {
         if (!cancelled) setReady(true);
         window.clearTimeout(ceiling);
@@ -666,7 +670,7 @@ export default function LoginPage() {
                 </Link>
               </p>
 
-              {!AUTH_REQUIRED ? (
+              {!enforced ? (
                 <p className="ya-footnote" style={{ marginTop: 8 }}>
                   <Link href="/" className="ya-link">
                     Skip for now
