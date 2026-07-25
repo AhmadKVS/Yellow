@@ -4,8 +4,13 @@ export interface Profile {
   id: string;
   name: string;
   emoji: string;
+  /** A real photo, picked as an alternate to `emoji`. Falls back to the emoji when absent. */
+  photoUrl?: string;
   gradient: [string, string];
+  /** The one-liner under the bubble — a truncated excerpt of `bio`, not the whole thing. */
   tagline: string;
+  /** The full write-up from onboarding ("who are you, what are you building"). */
+  bio?: string;
   softSkills: string[];
   interests: string[];
 }

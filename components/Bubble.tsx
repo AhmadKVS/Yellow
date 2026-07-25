@@ -139,11 +139,6 @@ function BubbleStyles() {
   position:absolute; border-radius:9999px; pointer-events:none;
   background: radial-gradient(circle, rgba(255,255,255,.85) 0%, rgba(255,255,255,.28) 42%, rgba(255,255,255,0) 72%);
 }
-.y-bub-label{
-  position:absolute; left:50%; top:100%; transform:translateX(-50%);
-  white-space:nowrap; pointer-events:none; z-index:2;
-  transition: color 320ms cubic-bezier(.22,1,.36,1);
-}
 @media (prefers-reduced-motion: reduce){
   .y-bub{ transition-duration:1ms; }
   .y-bub-i:hover{ transform: translateZ(0) scale(1.02); }
@@ -232,15 +227,14 @@ function BubbleImpl({
     ).toFixed(3)})`,
   ].join(',');
 
-  /* --- Type scale. Small bubbles get a bigger emoji (no inner name to
-         share the space with) and a floor on the label size so a 56px
-         bubble never ends up with 7px type. */
-  const nameInside = isMe;
-  const emojiSize = Math.round(nameInside ? size * 0.3 : size * 0.42);
+  /* --- Type scale. The name always lives inside the disc now — a label
+         hanging below overlapped the bubble packed in above it and was
+         unreadable. A floor on the size keeps a 56px bubble off 7px type. */
+  const emojiSize = Math.round(size * 0.3);
   const innerNameSize = Math.round(Math.min(16, Math.max(11, size * 0.115)));
-  const outerNameSize = Math.min(13, Math.max(9.5, size * 0.135));
 
   const label = firstName(profile?.name);
+  const photoUrl = profile?.photoUrl?.trim() || undefined;
   const a11y =
     ariaLabel ??
     (isMe
@@ -255,6 +249,28 @@ function BubbleImpl({
 
   const inner = (
     <>
+      {/* the photo fills the disc; the gradient background stays underneath
+          as the loading/error fallback — visible briefly while it loads, and
+          permanently if the URL 404s, so a broken photo just looks like the
+          plain avatar rather than a broken-image icon */}
+      {photoUrl ? (
+        <img
+          src={photoUrl}
+          alt=""
+          aria-hidden
+          draggable={false}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            borderRadius: 'inherit',
+            zIndex: 0,
+          }}
+        />
+      ) : null}
+
       {/* crisp secondary specular — sells the glass sphere */}
       <span
         className="y-bub-spec"
@@ -266,24 +282,29 @@ function BubbleImpl({
           height: `${size * 0.22}px`,
           filter: `blur(${Math.max(1.5, size * 0.028)}px)`,
           opacity: 0.75,
+          zIndex: 1,
         }}
       />
-      <span
-        aria-hidden
-        style={{
-          fontFamily: EMOJI,
-          fontSize: emojiSize,
-          lineHeight: 1,
-          filter: 'drop-shadow(0 2px 4px rgba(0,0,0,.32))',
-          transform: nameInside ? 'translateY(-2px)' : 'none',
-        }}
-      >
-        {profile?.emoji ?? '🙂'}
-      </span>
-      {nameInside && showLabel && label ? (
+      {photoUrl ? null : (
         <span
           aria-hidden
           style={{
+            fontFamily: EMOJI,
+            fontSize: emojiSize,
+            lineHeight: 1,
+            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,.32))',
+            transform: 'translateY(-2px)',
+          }}
+        >
+          {profile?.emoji ?? '🙂'}
+        </span>
+      )}
+      {showLabel && label ? (
+        <span
+          aria-hidden
+          style={{
+            position: 'relative',
+            zIndex: 1,
             fontFamily: SANS,
             fontSize: innerNameSize,
             fontWeight: 650,
@@ -332,25 +353,6 @@ function BubbleImpl({
           {inner}
         </div>
       )}
-
-      {!nameInside && showLabel && label ? (
-        <span
-          aria-hidden
-          className="y-bub-label"
-          style={{
-            fontFamily: SANS,
-            fontSize: outerNameSize,
-            fontWeight: 600,
-            letterSpacing: '-0.005em',
-            marginTop: Math.round(size * 0.06) + 2,
-            color: selected ? '#FFD60A' : 'rgba(255,248,231,.9)',
-            textShadow:
-              '0 1px 5px rgba(6,5,3,.95), 0 0 12px rgba(6,5,3,.8), 0 0 22px rgba(6,5,3,.55)',
-          }}
-        >
-          {label}
-        </span>
-      ) : null}
     </div>
   );
 }

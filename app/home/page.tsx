@@ -351,7 +351,7 @@ function FirstOne({ me, live }: { me: Profile; live: boolean }) {
           <button
             type="button"
             className="y-fo-ghost"
-            onClick={() => router.push('/onboarding')}
+            onClick={() => router.push('/settings')}
           >
             Edit your tags
           </button>

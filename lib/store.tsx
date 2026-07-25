@@ -32,6 +32,16 @@ import {
 } from './people';
 import { fetchPairs, type PairSummary } from './pair';
 import { fetchIntro, type VoiceIntro } from './intro';
+import {
+  addHubMember as apiAddHubMember,
+  createHub as apiCreateHub,
+  deleteHub as apiDeleteHub,
+  fetchHubs,
+  leaveHub as apiLeaveHub,
+  removeHubMember as apiRemoveHubMember,
+  type HubSummary,
+  type HubsSource,
+} from './hubs';
 
 /* -------------------------------------------------------------------------- */
 /* constants                                                                  */
@@ -50,6 +60,8 @@ const HYDRATE_DEADLINE_MS = 3_500;
 const PEOPLE_REFRESH_MS = 20_000;
 /** How often we re-read the shared pairs. Drives notifications and unread. */
 const PAIRS_REFRESH_MS = 8_000;
+/** How often we re-read the shared hubs, so an invite lands without a reload. */
+const HUBS_REFRESH_MS = 12_000;
 /** Per-person "how many messages had I seen". View state, never connection state. */
 const SEEN_STORAGE_KEY = 'yellow:seen';
 
@@ -60,26 +72,42 @@ const SEEN_STORAGE_KEY = 'yellow:seen';
 export type CloudStatus = 'idle' | 'syncing' | 'synced' | 'error';
 
 /**
+ * The app state this store actually owns.
+ *
+ * `hubs` is **deliberately subtracted** from `AppState`. A hub belongs to every
+ * one of its members, so keeping it in a per-user blob meant "adding" someone
+ * wrote nothing to their row and they never saw the hub. Hubs now live in
+ * `yellow-hubs` and are read through `lib/hubs.ts` — outside the reducer, the
+ * same way `people` and `pairs` are. Subtracting the field rather than leaving
+ * it empty is what guarantees no `hubs` key can reach localStorage or the
+ * `yellow-app` row: there is nothing to strip, and the compiler catches any
+ * caller that still reaches for it.
+ *
+ * `lib/types.ts` stays frozen — the `Hub` type is still read below, once, to
+ * migrate a legacy blob.
+ */
+export type LocalAppState = Omit<AppState, 'hubs'>;
+
+/**
  * What actually lands in localStorage / DynamoDB. `savedAt` is how we decide
  * whether the cloud copy is newer than the local one. `hydrated` is never
  * meaningful on disk — it is forced on load.
  */
-type PersistedState = AppState & { savedAt: number };
+type PersistedState = LocalAppState & { savedAt: number };
 
 interface StoreState {
-  app: AppState;
+  app: LocalAppState;
   /** Timestamp of the most recent local mutation. */
   savedAt: number;
   /** Bumped only by real mutations. 0 means "nothing to persist yet". */
   revision: number;
 }
 
-export const EMPTY_APP_STATE: AppState = {
+export const EMPTY_APP_STATE: LocalAppState = {
   hydrated: false,
   me: null,
   connections: {},
   messages: [],
-  hubs: [],
   nudgeDismissed: false,
 };
 
@@ -94,7 +122,7 @@ const initialStore: StoreState = {
 /* -------------------------------------------------------------------------- */
 
 export type Action =
-  | { type: 'HYDRATE'; state: AppState; savedAt?: number }
+  | { type: 'HYDRATE'; state: LocalAppState; savedAt?: number }
   | { type: 'READY' }
   | { type: 'SET_PROFILE'; profile: Profile }
   | { type: 'ENSURE_CONNECTION'; personId: string }
@@ -103,9 +131,6 @@ export type Action =
   | { type: 'RECEIVE_THEIR_INTRO'; personId: string }
   | { type: 'RECONCILE_PAIRS'; pairs: PairSummary[] }
   | { type: 'ADD_MESSAGE'; msg: Message }
-  | { type: 'CREATE_HUB'; hub: Hub }
-  | { type: 'ADD_HUB_MEMBER'; hubId: string; personId: string }
-  | { type: 'REMOVE_HUB_MEMBER'; hubId: string; personId: string }
   | { type: 'DISMISS_NUDGE' }
   | { type: 'RESET' };
 
@@ -118,7 +143,7 @@ function newConnection(personId: string): Connection {
 }
 
 /** Returns the existing connection or a fresh 'stranger' one. */
-function connectionFor(state: AppState, personId: string): Connection {
+function connectionFor(state: LocalAppState, personId: string): Connection {
   return state.connections[personId] ?? newConnection(personId);
 }
 
@@ -141,7 +166,7 @@ function promote(connection: Connection): Connection {
   return connection;
 }
 
-function withConnection(state: AppState, connection: Connection): AppState {
+function withConnection(state: LocalAppState, connection: Connection): LocalAppState {
   return {
     ...state,
     connections: { ...state.connections, [connection.personId]: connection },
@@ -207,17 +232,6 @@ function connectionFromSummary(
   };
 }
 
-function newId(prefix: string): string {
-  try {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return `${prefix}_${crypto.randomUUID()}`;
-    }
-  } catch {
-    /* fall through to the cheap id */
-  }
-  return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-}
-
 /* -------------------------------------------------------------------------- */
 /* reducer                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -226,7 +240,7 @@ function newId(prefix: string): string {
  * Pure app-level reducer. Returning the *same object* signals a no-op, which
  * the outer reducer uses to avoid marking the store dirty.
  */
-function appReducer(state: AppState, action: Action): AppState {
+function appReducer(state: LocalAppState, action: Action): LocalAppState {
   switch (action.type) {
     case 'SET_PROFILE':
       return { ...state, me: action.profile };
@@ -319,32 +333,9 @@ function appReducer(state: AppState, action: Action): AppState {
       return { ...state, connections, messages };
     }
 
-    case 'CREATE_HUB':
-      return { ...state, hubs: [...state.hubs, action.hub] };
-
-    case 'ADD_HUB_MEMBER': {
-      let changed = false;
-      const hubs = state.hubs.map((hub) => {
-        if (hub.id !== action.hubId || hub.memberIds.includes(action.personId)) {
-          return hub;
-        }
-        changed = true;
-        return { ...hub, memberIds: [...hub.memberIds, action.personId] };
-      });
-      return changed ? { ...state, hubs } : state;
-    }
-
-    case 'REMOVE_HUB_MEMBER': {
-      let changed = false;
-      const hubs = state.hubs.map((hub) => {
-        if (hub.id !== action.hubId || !hub.memberIds.includes(action.personId)) {
-          return hub;
-        }
-        changed = true;
-        return { ...hub, memberIds: hub.memberIds.filter((id) => id !== action.personId) };
-      });
-      return changed ? { ...state, hubs } : state;
-    }
+    /* Hubs used to be mutated here. They are shared rows now — see the
+       `hubs` block in the provider — so the reducer no longer knows about
+       them and they can never enter the persisted blob. */
 
     case 'DISMISS_NUDGE':
       return state.nudgeDismissed ? state : { ...state, nudgeDismissed: true };
@@ -383,6 +374,11 @@ function reducer(store: StoreState, action: Action): StoreState {
 /* storage io (all SSR-guarded)                                               */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * `hubs` is deliberately *not* required. Blobs written before hubs moved to
+ * their own table still carry one, and blobs written after this change carry
+ * none — both have to hydrate, or an upgrade would look like a wiped account.
+ */
 function isPersistedState(value: unknown): value is PersistedState {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -390,27 +386,50 @@ function isPersistedState(value: unknown): value is PersistedState {
     (v.me === null || typeof v.me === 'object') &&
     typeof v.connections === 'object' &&
     v.connections !== null &&
-    Array.isArray(v.messages) &&
-    Array.isArray(v.hubs)
+    Array.isArray(v.messages)
   );
 }
 
+/** A hub as it was stored in the old per-user blob. Read once, to migrate. */
+function isLegacyHub(value: unknown): value is Hub {
+  if (typeof value !== 'object' || value === null) return false;
+  const h = value as Record<string, unknown>;
+  return (
+    typeof h.id === 'string' &&
+    typeof h.name === 'string' &&
+    h.name.trim().length > 0 &&
+    Array.isArray(h.memberIds)
+  );
+}
+
+function legacyHubsOf(value: unknown): Hub[] {
+  const raw = (value as { hubs?: unknown } | null)?.hubs;
+  return Array.isArray(raw) ? raw.filter(isLegacyHub) : [];
+}
+
+interface Hydrated {
+  app: LocalAppState;
+  savedAt: number;
+  /** Anything the old blob still holds, handed to the one-shot migration. */
+  legacyHubs: Hub[];
+}
+
 /** Fills in anything an older/partial blob is missing. */
-function normalize(value: PersistedState): { app: AppState; savedAt: number } {
+function normalize(value: PersistedState): Hydrated {
   return {
     app: {
       hydrated: false,
       me: value.me ?? null,
       connections: value.connections ?? {},
       messages: Array.isArray(value.messages) ? value.messages : [],
-      hubs: Array.isArray(value.hubs) ? value.hubs : [],
       nudgeDismissed: value.nudgeDismissed === true,
     },
     savedAt: typeof value.savedAt === 'number' ? value.savedAt : 0,
+    legacyHubs: legacyHubsOf(value),
   };
 }
 
-function readLocal(): { app: AppState; savedAt: number } | null {
+function readLocal(): Hydrated | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -444,7 +463,7 @@ function clearLocal(): void {
 async function readCloud(
   userId: string,
   signal: AbortSignal,
-): Promise<{ app: AppState; savedAt: number } | null> {
+): Promise<Hydrated | null> {
   const res = await fetch(`/api/state?userId=${encodeURIComponent(userId)}`, {
     signal,
     cache: 'no-store',
@@ -456,7 +475,11 @@ async function readCloud(
   return normalize(state);
 }
 
-function toBlob(app: AppState, savedAt: number): PersistedState {
+/**
+ * The blob is built from `LocalAppState` alone, which has no `hubs` field —
+ * so a hub structurally cannot be written to localStorage or the state row.
+ */
+function toBlob(app: LocalAppState, savedAt: number): PersistedState {
   return { ...app, hydrated: false, savedAt };
 }
 
@@ -465,7 +488,7 @@ function toBlob(app: AppState, savedAt: number): PersistedState {
 /* -------------------------------------------------------------------------- */
 
 export interface AppStateApi {
-  state: AppState;
+  state: LocalAppState;
   /**
    * Everyone else on Yellow, read live from DynamoDB. Never persisted — see
    * the note on the fetch effect. Empty until the directory answers, and
@@ -473,15 +496,39 @@ export interface AppStateApi {
    */
   people: SeedPersona[];
   peopleSource: PeopleSource | 'loading';
+  /** This session's Cognito `sub` once auth answers. Owner checks need it. */
+  myId: string | null;
   setProfile(profile: Profile): void;
   ensureConnection(personId: string): void;
   setStage(personId: string, stage: ConnectionStage): void;
   sendMyIntro(personId: string): void;
   receiveTheirIntro(personId: string): void;
   addMessage(msg: Message): void;
-  createHub(input: { name: string; emoji: string; oneLiner: string }): string;
-  addHubMember(hubId: string, personId: string): void;
-  removeHubMember(hubId: string, personId: string): void;
+
+  /**
+   * Shared project hubs, read live from `yellow-hubs`. Like `people` and
+   * `pairs` these live outside the persisted store: a hub belongs to all of
+   * its members, so the server is the only place it is true.
+   *
+   * Every mutation below writes to the API and then re-reads, so what you see
+   * is what everyone else in the hub sees. All of them resolve `false`/`null`
+   * on failure rather than throwing.
+   */
+  hubs: HubSummary[];
+  hubsSource: HubsSource | 'loading';
+  refreshHubs(): Promise<void>;
+  /** Resolves the new hub's id, or `null` if the write didn't land. */
+  createHub(input: {
+    name: string;
+    emoji: string;
+    oneLiner: string;
+  }): Promise<string | null>;
+  addHubMember(hubId: string, personId: string): Promise<boolean>;
+  removeHubMember(hubId: string, personId: string): Promise<boolean>;
+  /** Remove yourself. The one member change a non-owner is allowed to make. */
+  leaveHub(hubId: string): Promise<boolean>;
+  deleteHub(hubId: string): Promise<boolean>;
+
   dismissNudge(): void;
   resetAll(): void;
   cloudStatus: CloudStatus;
@@ -534,6 +581,25 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
   /** Monotonic guard so a slow POST can't overwrite the status of a newer one. */
   const pushSeqRef = useRef(0);
   const mountedRef = useRef(true);
+
+  /**
+   * Hubs found in an old per-user blob (local or cloud), waiting to be
+   * published to `yellow-hubs`. Collected during hydration, drained once by
+   * the migration below. A ref, not state: it must not re-render anything and
+   * it must not be able to bump `revision`.
+   */
+  const legacyHubsRef = useRef<Hub[]>([]);
+  const migratedRef = useRef(false);
+
+  const rememberLegacyHubs = useCallback((hubs: Hub[]) => {
+    if (hubs.length === 0) return;
+    const seen = new Set(legacyHubsRef.current.map((h) => h.id));
+    for (const hub of hubs) {
+      if (seen.has(hub.id)) continue;
+      seen.add(hub.id);
+      legacyHubsRef.current.push(hub);
+    }
+  }, []);
 
   /**
    * Who this session is. The Cognito `sub` once auth answers, this browser's
@@ -603,6 +669,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       const local = readLocal();
       if (local) {
         localSavedAt = local.savedAt;
+        rememberLegacyHubs(local.legacyHubs);
         dispatch({ type: 'HYDRATE', state: local.app, savedAt: local.savedAt });
       }
     } catch {
@@ -617,8 +684,14 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
         const id = await resolveIdentity();
         if (id) adoptIdentity(id);
         const cloud = await readCloud(id || resolveDirectoryId(), controller.signal);
-        if (mountedRef.current && cloud && cloud.savedAt > localSavedAt) {
-          dispatch({ type: 'HYDRATE', state: cloud.app, savedAt: cloud.savedAt });
+        if (mountedRef.current && cloud) {
+          // Legacy hubs are worth keeping even from a row we're about to
+          // discard as stale — losing someone's hub is not an acceptable
+          // outcome of an upgrade.
+          rememberLegacyHubs(cloud.legacyHubs);
+          if (cloud.savedAt > localSavedAt) {
+            dispatch({ type: 'HYDRATE', state: cloud.app, savedAt: cloud.savedAt });
+          }
         }
       } catch {
         // Offline / aborted / 500 — keep whatever local gave us, silently.
@@ -636,7 +709,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       clearTimeout(deadline);
       controller.abort();
     };
-  }, [adoptIdentity]);
+  }, [adoptIdentity, rememberLegacyHubs]);
 
   /* ---------------------------------------------------------------------- */
   /* people directory — live, and deliberately NOT persisted                */
@@ -702,6 +775,141 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       controller.abort();
     };
   }, [adoptIdentity]);
+
+  /* ---------------------------------------------------------------------- */
+  /* shared hubs — live, and deliberately NOT persisted                     */
+  /*                                                                        */
+  /* This is the fix for the reported bug. Hubs used to be an array inside   */
+  /* `AppState`, so "adding" someone wrote only to the creator's own row and */
+  /* the person added saw nothing. They now live in `yellow-hubs`, keyed by  */
+  /* `hubId` with a `memberIds` roster, and every member reads the same row. */
+  /*                                                                        */
+  /* Same containment as `people` and `pairs`: plain `useState` outside the  */
+  /* reducer, so `toBlob()` cannot serialise them and these setters cannot   */
+  /* bump `revision`. `LocalAppState` has no `hubs` field at all, so this is */
+  /* enforced by the compiler rather than by discipline.                    */
+  /* ---------------------------------------------------------------------- */
+
+  const [hubs, setHubs] = useState<HubSummary[]>([]);
+  const [hubsSource, setHubsSource] = useState<HubsSource | 'loading'>('loading');
+  /** Change detector, so a poll returning an identical list doesn't re-render. */
+  const hubsSigRef = useRef('');
+
+  const refreshHubs = useCallback(async () => {
+    // Never throws, never hangs past its own timeout, and answers
+    // `source: 'unavailable'` rather than rejecting when the table is down.
+    const result = await fetchHubs();
+    if (!mountedRef.current) return;
+
+    // A failed read is not permission to forget every hub this person is in.
+    if (result.source !== 'dynamodb') {
+      setHubsSource((current) => (current === 'loading' ? 'unavailable' : current));
+      return;
+    }
+
+    const signature = JSON.stringify(result.hubs);
+    if (signature !== hubsSigRef.current) {
+      hubsSigRef.current = signature;
+      setHubs(result.hubs);
+    }
+    setHubsSource('dynamodb');
+  }, []);
+
+  /**
+   * One-shot migration off the old per-user blob.
+   *
+   * Idempotent by construction: a legacy hub is published only when no shared
+   * hub of the same name already exists for this person, so re-running after a
+   * successful migration is a no-op. Members are re-added best-effort — those
+   * ids were always real people, they just never learned they'd been added.
+   *
+   * Entirely best-effort: it can't fail the page, and it can't lose the hub —
+   * the legacy blob is left exactly where it was until it is superseded.
+   */
+  const migrateLegacyHubs = useCallback(
+    async (existing: HubSummary[]) => {
+      if (migratedRef.current) return;
+      const legacy = legacyHubsRef.current;
+      if (legacy.length === 0) {
+        migratedRef.current = true;
+        return;
+      }
+      migratedRef.current = true;
+
+      const known = new Set(existing.map((hub) => hub.name.trim().toLowerCase()));
+      let published = false;
+
+      for (const hub of legacy) {
+        const name = hub.name.trim();
+        if (!name || known.has(name.toLowerCase())) continue;
+
+        const created = await apiCreateHub({
+          name,
+          emoji: hub.emoji || '🚀',
+          oneLiner: hub.oneLiner || '',
+        });
+        if (!created) continue;
+
+        known.add(name.toLowerCase());
+        published = true;
+
+        for (const memberId of hub.memberIds ?? []) {
+          if (!memberId) continue;
+          await apiAddHubMember(created.hubId, memberId);
+        }
+      }
+
+      legacyHubsRef.current = [];
+      if (published) await refreshHubs();
+    },
+    [refreshHubs],
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      // Identity first, every time. Asking for hubs before the session cookie
+      // has been read would 401 and look like "you're in no hubs".
+      await resolveIdentity();
+      if (!active) return;
+
+      const result = await fetchHubs();
+      if (!active || !mountedRef.current) return;
+
+      if (result.source === 'dynamodb') {
+        const signature = JSON.stringify(result.hubs);
+        if (signature !== hubsSigRef.current) {
+          hubsSigRef.current = signature;
+          setHubs(result.hubs);
+        }
+        setHubsSource('dynamodb');
+        void migrateLegacyHubs(result.hubs);
+        return;
+      }
+
+      // Unreachable. Say so once and keep whatever we already had — a hub
+      // fetch must never blank the screen or block the rest of the app.
+      setHubsSource((current) => (current === 'loading' ? 'unavailable' : current));
+    };
+
+    void load();
+
+    const tick = () => {
+      if (document.visibilityState === 'hidden') return;
+      void load();
+    };
+    const poll = setInterval(tick, HUBS_REFRESH_MS);
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', tick);
+
+    return () => {
+      active = false;
+      clearInterval(poll);
+      window.removeEventListener('focus', tick);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [migrateLegacyHubs]);
 
   /* ---------------------------------------------------------------------- */
   /* shared pairs — live, and deliberately NOT persisted                    */
@@ -907,28 +1115,59 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
     dispatch({ type: 'ADD_MESSAGE', msg });
   }, []);
 
+  /* Hub mutations all follow the same shape: write through the API, then
+     re-read the server. Optimism would be a lie here — a hub is shared, and
+     the row is the only place its roster is true. */
+
   const createHub = useCallback(
-    (input: { name: string; emoji: string; oneLiner: string }): string => {
-      const hub: Hub = {
-        id: newId('hub'),
-        name: input.name,
-        emoji: input.emoji,
-        oneLiner: input.oneLiner,
-        memberIds: [],
-      };
-      dispatch({ type: 'CREATE_HUB', hub });
-      return hub.id;
+    async (input: {
+      name: string;
+      emoji: string;
+      oneLiner: string;
+    }): Promise<string | null> => {
+      const hub = await apiCreateHub(input);
+      if (!hub) return null;
+      await refreshHubs();
+      return hub.hubId;
     },
-    [],
+    [refreshHubs],
   );
 
-  const addHubMember = useCallback((hubId: string, personId: string) => {
-    dispatch({ type: 'ADD_HUB_MEMBER', hubId, personId });
-  }, []);
+  const addHubMember = useCallback(
+    async (hubId: string, personId: string): Promise<boolean> => {
+      const hub = await apiAddHubMember(hubId, personId);
+      await refreshHubs();
+      return hub !== null;
+    },
+    [refreshHubs],
+  );
 
-  const removeHubMember = useCallback((hubId: string, personId: string) => {
-    dispatch({ type: 'REMOVE_HUB_MEMBER', hubId, personId });
-  }, []);
+  const removeHubMember = useCallback(
+    async (hubId: string, personId: string): Promise<boolean> => {
+      const hub = await apiRemoveHubMember(hubId, personId);
+      await refreshHubs();
+      return hub !== null;
+    },
+    [refreshHubs],
+  );
+
+  const leaveHub = useCallback(
+    async (hubId: string): Promise<boolean> => {
+      const left = await apiLeaveHub(hubId);
+      await refreshHubs();
+      return left;
+    },
+    [refreshHubs],
+  );
+
+  const deleteHub = useCallback(
+    async (hubId: string): Promise<boolean> => {
+      const gone = await apiDeleteHub(hubId);
+      await refreshHubs();
+      return gone;
+    },
+    [refreshHubs],
+  );
 
   const dismissNudge = useCallback(() => {
     dispatch({ type: 'DISMISS_NUDGE' });
@@ -977,9 +1216,10 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
     }
     pendingRef.current = null;
     clearLocal();
-    // Unread is view state, so it resets with the view. Pair rows are not
-    // touched: a connection is mutual, and one side clearing their browser
-    // must not silently disconnect the other person.
+    // Unread is view state, so it resets with the view. Pair rows and hub rows
+    // are not touched: both are shared, and one side clearing their browser
+    // must not silently disconnect the other person or delete a project other
+    // people are working in.
     seenDispatch({ type: 'CLEAR' });
     // Stamp "now" so this empty state beats any stale DynamoDB row on reload.
     pushCloud(toBlob(EMPTY_APP_STATE, Date.now()));
@@ -1004,15 +1244,21 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       state: store.app,
       people: visiblePeople,
       peopleSource,
+      myId: identity,
       setProfile,
       ensureConnection,
       setStage,
       sendMyIntro,
       receiveTheirIntro,
       addMessage,
+      hubs,
+      hubsSource,
+      refreshHubs,
       createHub,
       addHubMember,
       removeHubMember,
+      leaveHub,
+      deleteHub,
       dismissNudge,
       resetAll,
       cloudStatus,
@@ -1033,15 +1279,21 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
       store.app,
       visiblePeople,
       peopleSource,
+      identity,
       setProfile,
       ensureConnection,
       setStage,
       sendMyIntro,
       receiveTheirIntro,
       addMessage,
+      hubs,
+      hubsSource,
+      refreshHubs,
       createHub,
       addHubMember,
       removeHubMember,
+      leaveHub,
+      deleteHub,
       dismissNudge,
       resetAll,
       cloudStatus,

@@ -16,7 +16,9 @@
  * reach DynamoDB renders empty, not broken.
  */
 
+import { normalizeTag } from '@/lib/match';
 import { resolveIdentity } from '@/lib/people';
+import type { Profile } from '@/lib/types';
 
 /* -------------------------------------------------------------------------- */
 /* shapes                                                                     */
@@ -263,6 +265,76 @@ export function summarize(items: readonly HubItem[]): HubSignal {
   }
 
   return { posts: postCount, openTasks, overdueTasks, lastActivityAt };
+}
+
+/* ------------------------------ what a hub is ----------------------------- */
+
+export interface CoverageTag {
+  /** The member's own casing — the vocabulary is canonical, so it agrees. */
+  label: string;
+  /** How many people in the hub hold this tag. 2+ is the interesting case. */
+  count: number;
+  kind: 'skill' | 'interest';
+}
+
+export interface HubCoverage {
+  /** Ranked, deduped. What this group is actually made of. */
+  tags: CoverageTag[];
+  totalSkills: number;
+  totalInterests: number;
+  /** Tags more than one member holds — the overlap the hub was built on. */
+  shared: number;
+}
+
+/**
+ * What a hub covers between everyone in it.
+ *
+ * This is the answer to "what is the purpose of a hub — it's just adding
+ * people". A roster of names says nothing; the same roster read as *combined
+ * coverage* says "this is a team assembled around a project". Soft skills are
+ * weighted 2× exactly as `matchScore` does, because that weighting is the
+ * product's whole differentiator and the hub view must not quietly disagree
+ * with the bubble map.
+ *
+ * `normalizeTag` does the deduping so "Storytelling" and "storytelling" are
+ * one tag, while the first casing seen is what gets rendered.
+ */
+export function hubCoverage(members: readonly Profile[]): HubCoverage {
+  const seen = new Map<string, CoverageTag>();
+
+  const absorb = (tags: readonly string[], kind: 'skill' | 'interest') => {
+    // Per person, so someone listing a tag twice can't inflate the count.
+    const mine = new Set<string>();
+    for (const tag of tags) {
+      const key = `${kind}:${normalizeTag(tag)}`;
+      if (!key.endsWith(':') && !mine.has(key)) {
+        mine.add(key);
+        const existing = seen.get(key);
+        if (existing) existing.count += 1;
+        else seen.set(key, { label: tag, count: 1, kind });
+      }
+    }
+  };
+
+  for (const member of members) {
+    absorb(member.softSkills ?? [], 'skill');
+    absorb(member.interests ?? [], 'interest');
+  }
+
+  const tags = [...seen.values()].sort((a, b) => {
+    const weightA = a.count * (a.kind === 'skill' ? 2 : 1);
+    const weightB = b.count * (b.kind === 'skill' ? 2 : 1);
+    if (weightA !== weightB) return weightB - weightA;
+    if (a.count !== b.count) return b.count - a.count;
+    return a.label.localeCompare(b.label);
+  });
+
+  return {
+    tags,
+    totalSkills: tags.filter((t) => t.kind === 'skill').length,
+    totalInterests: tags.filter((t) => t.kind === 'interest').length,
+    shared: tags.filter((t) => t.count > 1).length,
+  };
 }
 
 /** "now" / "14m" / "3h" / "2d". Shared by both hub screens. */

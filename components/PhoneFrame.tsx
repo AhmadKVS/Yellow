@@ -65,11 +65,6 @@ function AccountFooter({ variant = 'sidebar' }: { variant?: 'sidebar' | 'strip' 
 
   return (
     <div className="mt-auto px-3">
-      <div className="mb-2.5 flex items-center gap-2 text-[11px] text-[#FFF8E7]/30">
-        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[#FFD60A]/60" />
-        Synced to AWS
-      </div>
-
       {user && (
         <div className="border-t border-white/[0.06] pt-3">
           <p className="truncate text-[12px] font-medium text-[#FFF8E7]/70">
@@ -97,6 +92,12 @@ function isFullBleed(pathname: string) {
   return pathname === '/home';
 }
 
+/** Routes whose reading column widens past the standard 560px, for a
+ *  side-by-side layout that would be cramped in the normal column. */
+function isWide(pathname: string) {
+  return pathname === '/settings';
+}
+
 /** Routes that render before onboarding completes, where nav would be a dead end. */
 function isChromeless(pathname: string) {
   return (
@@ -112,6 +113,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const fullBleed = isFullBleed(pathname);
   const chromeless = isChromeless(pathname);
+  const wide = isWide(pathname);
 
   return (
     <>
@@ -163,7 +165,11 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
             children
           ) : (
             <div className="flex-1 overflow-y-auto">
-              <div className="mx-auto flex w-full max-w-[560px] flex-col px-5 md:px-8">
+              <div
+                className={`mx-auto flex w-full flex-col px-5 md:px-8 ${
+                  wide ? 'max-w-[1040px]' : 'max-w-[560px]'
+                }`}
+              >
                 {children}
               </div>
             </div>

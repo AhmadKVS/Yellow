@@ -214,6 +214,8 @@ export function isDirectoryPerson(value: unknown): value is DirectoryPerson {
     typeof p.name === 'string' &&
     p.name.trim().length > 0 &&
     typeof p.emoji === 'string' &&
+    (p.photoUrl === undefined || typeof p.photoUrl === 'string') &&
+    (p.bio === undefined || typeof p.bio === 'string') &&
     Array.isArray(p.gradient) &&
     p.gradient.length === 2 &&
     typeof p.gradient[0] === 'string' &&
@@ -263,8 +265,10 @@ export function toPerson(person: DirectoryPerson): SeedPersona {
     id: person.id,
     name,
     emoji: person.emoji || '🙂',
+    photoUrl: person.photoUrl,
     gradient: [person.gradient[0], person.gradient[1]],
     tagline,
+    bio: person.bio,
     softSkills: person.softSkills,
     interests: person.interests,
     intro: isCompleteIntro(person.intro)

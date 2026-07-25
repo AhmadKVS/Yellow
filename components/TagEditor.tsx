@@ -20,7 +20,7 @@ const SANS =
 const MONO =
   'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace';
 
-const DEFAULT_MAX = 8;
+const DEFAULT_MAX = 10;
 const MAX_TAG_LENGTH = 28;
 const SUGGESTION_COUNT = 6;
 /* Must stay in sync with the `.yt-chip` transition duration below —
@@ -42,7 +42,7 @@ export interface TagEditorProps {
   onChange: (next: TagGroups) => void;
   /** Suggestion source. Defaults to `TAG_VOCAB` from `@/lib/seed`. */
   vocab?: TagGroups;
-  /** Ceiling per group. Defaults to 8. */
+  /** Ceiling per group. Defaults to 10. */
   maxPerGroup?: number;
 }
 

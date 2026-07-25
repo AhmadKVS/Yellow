@@ -12,6 +12,8 @@ import {
 import { useRouter } from 'next/navigation';
 import TagEditor, { type TagGroups } from '@/components/TagEditor';
 import { extractTags } from '@/lib/extract';
+import { resolveIdentity } from '@/lib/people';
+import { rejectPhoto, uploadPhoto } from '@/lib/photoClient';
 import { useAppState } from '@/lib/store';
 import type { Profile } from '@/lib/types';
 
@@ -358,6 +360,17 @@ function OnboardingStyles() {
   box-shadow:0 0 0 1px #FFD60A inset,0 0 20px rgba(255,214,10,.3);
   transform:translateY(-2px) scale(1.04);
 }
+.yo-face-wrap{position:relative;aspect-ratio:1}
+.yo-face-wrap .yo-face{width:100%;height:100%;aspect-ratio:auto;font-size:17px;overflow:hidden}
+.yo-face-img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.yo-face-clear{
+  position:absolute;top:-5px;right:-5px;width:18px;height:18px;padding:0;
+  display:flex;align-items:center;justify-content:center;border-radius:999px;cursor:pointer;
+  border:1px solid rgba(255,214,10,.5);background:#100E09;color:#FFF8E7;font-size:9px;
+  -webkit-tap-highlight-color:transparent;
+}
+.yo-face-clear:hover{border-color:#FFD60A;color:#FFD60A}
+.yo-photo-err{margin:8px 0 0;font-size:11.5px;color:#FFC300}
 
 /* --- footer ----------------------------------------------------- */
 .yo-foot{
@@ -447,6 +460,10 @@ export default function OnboardingPage() {
 
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState(AVATARS[0]);
+  const [photoUrl, setPhotoUrl] = useState<string | undefined>(undefined);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   /* The store hydrates in an effect. Don't paint the form until it has —
@@ -519,8 +536,8 @@ export default function OnboardingPage() {
       if (!alive.current) return;
 
       const next: TagGroups = {
-        softSkills: tidy(result.softSkills, 8),
-        interests: tidy(result.interests, 8),
+        softSkills: tidy(result.softSkills, 10),
+        interests: tidy(result.interests, 10),
       };
       extracted.current = next;
       setTags(next);
@@ -529,6 +546,23 @@ export default function OnboardingPage() {
     }, STEP_SWAP_MS + 40);
     timers.current.push(id);
   }, [canRead, goTo, step, trimmed]);
+
+  const handlePhotoFile = useCallback(async (file: File | null) => {
+    if (!file) return;
+    const rejection = rejectPhoto(file);
+    if (rejection) {
+      setPhotoError(rejection === 'type' ? 'That file isn’t an image.' : 'Keep it under 8MB.');
+      return;
+    }
+    setPhotoError('');
+    setPhotoBusy(true);
+    const ownerId = await resolveIdentity();
+    const url = await uploadPhoto(ownerId, file);
+    if (!alive.current) return;
+    setPhotoBusy(false);
+    if (url) setPhotoUrl(url);
+    else setPhotoError('Couldn’t upload that — try again.');
+  }, []);
 
   const tagline = useMemo(() => deriveTagline(text), [text]);
   const trimmedName = name.trim();
@@ -548,21 +582,23 @@ export default function OnboardingPage() {
     if (!canEnter || submitting) return;
     setSubmitting(true);
 
-    const softSkills = tidy(tags.softSkills, 8);
-    const interests = tidy(tags.interests, 8);
+    const softSkills = tidy(tags.softSkills, 10);
+    const interests = tidy(tags.interests, 10);
 
     const profile: Profile = {
       id: 'me',
       name: trimmedName.slice(0, 40) || 'You',
       emoji: emoji || AVATARS[0],
+      photoUrl,
       gradient: MY_GRADIENT,
       tagline,
+      bio: trimmed || undefined,
       softSkills: softSkills.length
         ? softSkills
-        : tidy(extracted.current.softSkills, 8),
+        : tidy(extracted.current.softSkills, 10),
       interests: interests.length
         ? interests
-        : tidy(extracted.current.interests, 8),
+        : tidy(extracted.current.interests, 10),
     };
 
     setProfile(profile);
@@ -570,6 +606,7 @@ export default function OnboardingPage() {
   }, [
     canEnter,
     emoji,
+    photoUrl,
     router,
     setProfile,
     submitting,
@@ -812,16 +849,61 @@ export default function OnboardingPage() {
                     key={option}
                     type="button"
                     role="radio"
-                    aria-checked={emoji === option}
+                    aria-checked={!photoUrl && emoji === option}
                     aria-label={`Avatar ${option}`}
                     className="yo-face"
                     style={{ fontFamily: EMOJI_FACE }}
-                    onClick={() => setEmoji(option)}
+                    onClick={() => {
+                      setEmoji(option);
+                      setPhotoUrl(undefined);
+                    }}
                   >
                     {option}
                   </button>
                 ))}
+
+                <div className="yo-face-wrap">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={Boolean(photoUrl)}
+                    aria-label={photoUrl ? 'Your photo. Tap to replace.' : 'Upload a photo'}
+                    className="yo-face"
+                    disabled={photoBusy}
+                    onClick={() => photoInputRef.current?.click()}
+                  >
+                    {photoUrl ? (
+                      <img src={photoUrl} alt="" className="yo-face-img" />
+                    ) : photoBusy ? (
+                      '…'
+                    ) : (
+                      '📷'
+                    )}
+                  </button>
+                  {photoUrl ? (
+                    <button
+                      type="button"
+                      className="yo-face-clear"
+                      aria-label="Remove photo"
+                      onClick={() => setPhotoUrl(undefined)}
+                    >
+                      ✕
+                    </button>
+                  ) : null}
+                </div>
               </div>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                style={srOnly}
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  void handlePhotoFile(file);
+                  event.target.value = '';
+                }}
+              />
+              {photoError ? <p className="yo-photo-err">{photoError}</p> : null}
             </>
           ) : null}
         </div>

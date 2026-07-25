@@ -340,8 +340,7 @@ export default function BubbleField({
     let extentY = meR + 8;
     for (const n of nodes) {
       extentX = Math.max(extentX, Math.abs(n.x - cx) + n.r + 6);
-      // labels hang below the disc, so the vertical budget needs headroom
-      extentY = Math.max(extentY, Math.abs(n.y - cy) * ky + n.r + 22);
+      extentY = Math.max(extentY, Math.abs(n.y - cy) * ky + n.r + 6);
     }
     const home = clamp(
       Math.min((w / 2 - 8) / extentX, (h / 2 - 8) / extentY),
@@ -513,10 +512,18 @@ export default function BubbleField({
         drag.sy = e.clientY;
         drag.ox = camRef.current.tx;
         drag.oy = camRef.current.ty;
-        try {
-          el.setPointerCapture(e.pointerId);
-        } catch {
-          /* capture is best-effort */
+        /* Capturing here would retarget the matching pointerup/click to `el`
+           itself, even for a plain tap — so a bubble's own button never
+           sees the click. Only capture for drags that don't start on a
+           control; those still pan fine via normal bubbling. */
+        const interactive =
+          e.target instanceof Element && e.target.closest('button');
+        if (!interactive) {
+          try {
+            el.setPointerCapture(e.pointerId);
+          } catch {
+            /* capture is best-effort */
+          }
         }
       } else if (pointers.size === 2) {
         const [a, b] = Array.from(pointers.values());

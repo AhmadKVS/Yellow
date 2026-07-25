@@ -33,6 +33,12 @@ const TABS: TabDef[] = [
     href: '/hubs',
     isActive: (pathname) => pathname.startsWith('/hubs'),
   },
+  {
+    label: 'Settings',
+    icon: '\u{2699}\u{FE0F}',
+    href: '/settings',
+    isActive: (pathname) => pathname.startsWith('/settings'),
+  },
 ];
 
 function UnreadBadge({ count, className }: { count: number; className?: string }) {
