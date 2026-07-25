@@ -1076,23 +1076,34 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactEl
 
   const setProfile = useCallback(
     (profile: Profile) => {
-      // Stamp our real id onto the profile. Onboarding writes a placeholder;
-      // using the identity here is what makes `excludeId` and the connection
-      // keys other people see line up with this account.
-      const id = currentUserId();
-      const owned: Profile = { ...profile, id };
-      dispatch({ type: 'SET_PROFILE', profile: owned });
+      void (async () => {
+        // Stamp our real id onto the profile. `currentUserId()` alone can
+        // race `resolveIdentity()`'s `/api/auth/me` round trip: someone who
+        // hits "Enter" on onboarding before that answers gets published under
+        // their throwaway browser UUID forever, because nothing ever
+        // revisits `profile.id` afterwards. That UUID is what everyone else's
+        // browser then uses as `them` in `pairKey`, while this account's own
+        // server calls resolve `me` from the Cognito session — two different
+        // ids for one person, so every pair with them silently splits into
+        // two half-filled rows that never both complete. Awaiting here is
+        // what keeps the published id and the session id the same one.
+        const id = (await resolveIdentity()) || currentUserId();
+        adoptIdentity(id);
 
-      // Publish into the shared directory so other browsers can discover this
-      // person. Strictly fire-and-forget — it can never fail onboarding, and
-      // it never touches the persisted state blob.
-      try {
-        void publishProfile(owned, id);
-      } catch {
-        /* discovery is best-effort */
-      }
+        const owned: Profile = { ...profile, id };
+        dispatch({ type: 'SET_PROFILE', profile: owned });
+
+        // Publish into the shared directory so other browsers can discover
+        // this person. Strictly fire-and-forget — it can never fail
+        // onboarding, and it never touches the persisted state blob.
+        try {
+          await publishProfile(owned, id);
+        } catch {
+          /* discovery is best-effort */
+        }
+      })();
     },
-    [currentUserId],
+    [currentUserId, adoptIdentity],
   );
 
   const ensureConnection = useCallback((personId: string) => {

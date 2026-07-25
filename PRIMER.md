@@ -110,9 +110,15 @@ append-only `messages` list. Rules that must survive any edit:
 - Pair data lives in plain `useState` beside `people` — **outside** the persisted blob,
   so it can never reach localStorage or the state row.
 
-Voice intros are recorded once and stored as `voiceIntro` on the user's `yellow-users`
-directory row; the audio itself sits in S3 under `audio/<ownerId>/<messageId>.webm` and
-is presigned at read time, never stored as a URL.
+Voice intros are stored as `voiceIntro` on the user's `yellow-users` directory row; the
+audio itself sits in S3 under `audio/<ownerId>/<messageId>.webm` and is presigned at
+read time, never stored as a URL. `isVoiceIntro` (`lib/intro.ts`) requires all three
+answers — that gate is what the connect flow reads, and it never loosens. From
+Settings, though, you can answer and save one or two of the three at a time: anything
+short of all three is kept as a local, unpublished draft (`localStorage`, scoped to
+your account) rather than sent to `/api/intro`, so recording one question doesn't force
+recording the others in the same sitting, and nothing half-finished ever reaches the
+directory or another person's connect screen.
 
 ### Shared hubs (`lib/hubs.ts` · `lib/hubsServer.ts`)
 
@@ -216,6 +222,14 @@ Each of these cost real time. They are not hypothetical.
    not the service role. Wrong one = pages render fine while every API route 500s.
 6. **Amplify artifact dir must be `.next`**, not `out`. `out` silently ships a static
    site and every API route 404s.
+7. **A bucket policy alone doesn't make anything public.** S3's account/bucket-level
+   `PublicAccessBlock` (`BlockPublicPolicy` + `RestrictPublicBuckets`) silently
+   ignores a policy that grants public access until those two are turned off. We
+   left `BlockPublicAcls`/`IgnorePublicAcls` **on** (we use a policy, not ACLs) and
+   scoped the policy itself to `photos/*` — see the invariant in `AGENTS.md`.
+   `scripts/provision.mjs` now runs this step (`ensurePublicPhotos`) so a fresh
+   bucket in a new environment gets it automatically; it was applied by hand once
+   against the existing bucket before the script was updated.
 
 ---
 
@@ -226,8 +240,13 @@ Each of these cost real time. They are not hypothetical.
 - **Desktop (≥768px):** 236px sidebar (brand, nav, account + sign-out) + main area.
 - **Mobile:** bottom tab bar plus a sign-out strip.
 - **`/home` is full-bleed** so the bubble field fills the canvas; every other screen
-  sits in a `max-w-[560px]` reading column with `px-5 md:px-8`.
+  sits in a reading column with `px-5 md:px-8` — `max-w-[560px]` normally,
+  `max-w-[1040px]` on `/settings` (`isWide()`), whose two-card dashboard layout needs
+  the extra room on wide viewports.
 - **Chromeless routes** (no nav): `/`, `/onboarding`, `/reset`, `/login`, `/signup`.
+- **In-app toasts** (`components/Toast.tsx`) render outside the frame's scroll
+  container on purpose — `main` and the reading column both clip overflow, and a
+  notification that scrolls away with the page isn't one.
 
 If you change the frame's gutter, `app/connect/[id]/page.tsx` has a sticky footer with
 a matching negative-margin bleed that must be updated too.
@@ -242,13 +261,15 @@ Components ship their own CSS via React 19's `<style href precedence="high">` pa
 ```bash
 npm install
 npm run dev          # Turbopack, no flags
-node scripts/provision.mjs   # one-shot: creates the table + bucket + CORS
+node scripts/provision.mjs   # one-shot: table + bucket + CORS + public photos/* policy
 ```
 
 `.env.local` (gitignored) needs: `AWS_REGION`, `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`, `YELLOW_TABLE`, `YELLOW_USERS_TABLE`, `YELLOW_BUCKET`,
 `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_CLIENT_SECRET`,
-`NEXT_PUBLIC_AUTH_REQUIRED`, `NEXT_PUBLIC_DEMO_PERSONAS`.
+`NEXT_PUBLIC_AUTH_REQUIRED`, `NEXT_PUBLIC_DEMO_PERSONAS`. `YELLOW_HUBS_TABLE` and
+`YELLOW_HUB_ITEMS_TABLE` are optional — they default to `yellow-hubs` /
+`yellow-hub-items` (`lib/aws.ts`) and only need setting to point at different tables.
 
 **Escape hatches:**
 - `/reset` — clears local + cloud state and returns to onboarding.

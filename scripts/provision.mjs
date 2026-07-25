@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Provisions the AWS resources Yellow needs: a DynamoDB table for app state
-// and an S3 bucket (+ CORS) for voice notes.
+// Provisions the AWS resources Yellow needs: a DynamoDB table for app state,
+// an S3 bucket (+ CORS) for voice notes, and a public-read policy on that
+// bucket's `photos/` prefix for profile photos.
 //
 // Plain Node ESM — not part of the Next.js build. Run with:
 //   node scripts/provision.mjs
@@ -13,6 +14,8 @@ import {
   S3Client,
   CreateBucketCommand,
   PutBucketCorsCommand,
+  PutPublicAccessBlockCommand,
+  PutBucketPolicyCommand,
 } from "@aws-sdk/client-s3";
 
 // --- tiny .env.local loader (avoids adding a dotenv dependency) -------------
@@ -110,11 +113,51 @@ async function ensureCors() {
   console.log(`[s3] CORS configured on "${BUCKET_NAME}"`);
 }
 
+// Profile photos (`photos/<ownerId>/<ts>.jpg`) are served as plain `<img src>`
+// URLs, never presigned — unlike voice clips, every match sees them passively
+// on every page load. That needs a bucket policy granting public GetObject,
+// scoped to the `photos/` prefix only. A bucket policy alone is not enough:
+// S3's account/bucket-level PublicAccessBlock silently ignores a policy that
+// grants public access until BlockPublicPolicy/RestrictPublicBuckets are off.
+// BlockPublicAcls/IgnorePublicAcls stay on — this uses a policy, not ACLs.
+async function ensurePublicPhotos() {
+  await s3.send(
+    new PutPublicAccessBlockCommand({
+      Bucket: BUCKET_NAME,
+      PublicAccessBlockConfiguration: {
+        BlockPublicAcls: true,
+        IgnorePublicAcls: true,
+        BlockPublicPolicy: false,
+        RestrictPublicBuckets: false,
+      },
+    })
+  );
+
+  const policy = {
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Sid: "PublicReadProfilePhotos",
+        Effect: "Allow",
+        Principal: "*",
+        Action: "s3:GetObject",
+        Resource: `arn:aws:s3:::${BUCKET_NAME}/photos/*`,
+      },
+    ],
+  };
+
+  await s3.send(
+    new PutBucketPolicyCommand({ Bucket: BUCKET_NAME, Policy: JSON.stringify(policy) })
+  );
+  console.log(`[s3] "${BUCKET_NAME}/photos/*" is public-read`);
+}
+
 async function main() {
   console.log(`Provisioning Yellow AWS resources in ${REGION}...`);
   await ensureTable();
   await ensureBucket();
   await ensureCors();
+  await ensurePublicPhotos();
   console.log("Done.");
 }
 

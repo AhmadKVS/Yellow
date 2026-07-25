@@ -92,21 +92,58 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
 - **Settings** (`/settings`) — name, emoji, tagline and tags all editable for the
   first time, plus the only route to record a voice intro outside a connection flow.
   The not-yet-recorded state leads the page, because without one nobody can connect
-  with you at all.
+  with you at all. You can now record and save just one or two of the three
+  questions — saved as a local, unpublished draft — instead of losing the take if
+  you don't finish all three in one sitting. The connect gate itself didn't move:
+  it still needs all three from both sides before anyone can message.
 - **Profile photos** — public-read `photos/*` carve-out on the S3 bucket so avatars
   load as plain `<img>` with no per-viewer presign; every other prefix stays private.
 - Fixed a dead end: the empty-state "Edit your tags" button pointed at `/onboarding`,
   which bounces anyone with a profile straight back to `/home`. It did nothing.
+
+### Hours 12–13 · Bug fixes, bio, and directory cleanup
+- **Fixed every bubble/profile-card click silently doing nothing.**
+  `BubbleField`'s pan handler called `setPointerCapture` on *every* pointerdown,
+  including ones that started on a bubble's own `<button>`. Once captured, the
+  browser retargets the matching `pointerup`/`click` to the container instead of
+  the button underneath — so tapping a bubble (or the Recenter button) never fired
+  its `onClick`, even standing perfectly still. Now capture is skipped when the
+  press starts on a control; panning from empty space is unaffected. Confirmed with
+  real (non-synthetic) pointer events, not just `.click()`.
+- **Names moved inside the bubble.** The label used to hang below the disc, which
+  overlapped whatever bubble was packed in above it and was unreadable in a dense
+  cluster. Every avatar now renders its name inside the disc, same treatment the
+  "me" bubble already had.
+- **Settings is now a 2-column dashboard** on wide viewports ("You" and "Your
+  tags" side by side, "Your voice intro" full-width below) instead of one long
+  scrolling column. The old vertical "completeness rail" connecting all three
+  sections top-to-bottom was replaced with a status dot in each card's own header,
+  since a connecting line stopped making sense once two sections sit side by side.
+  Removed the static "Synced to AWS" line from the sidebar.
+- **The full onboarding write-up is no longer discarded.** Only the short,
+  truncated `tagline` was ever saved — the full blurb you wrote existed nowhere
+  after onboarding finished. It's now kept as `Profile.bio`, editable from a new
+  "Full description" field in Settings, and shown in full on `ProfileCard`.
+- **Tag cap raised from 8 to 10** per group (soft skills, interests) — onboarding,
+  Settings, and `TagEditor`'s default all moved together.
+- **Deleted three leftover test accounts** (`Bo Hubtest`, `Ada Hubtest`,
+  `Coexist 269`) directly from the live `yellow-users` table — they were cluttering
+  everyone's orbit with junk matches. The one real account in the directory was
+  left untouched.
 
 ---
 
 ## Next up 🎯
 
 ### P0 — Before demoing
-- [ ] **Register 2–3 real accounts on the live URL.** The directory is empty; the
-      first user sees "You're the first one here." The bubble map needs a crowd for
-      "sized by overlap" to read at all. If the room is empty at demo time, set
-      `NEXT_PUBLIC_DEMO_PERSONAS=true` and rebuild.
+- [ ] **Verify the live URL actually reflects `main`.** Hours 8–12 (real connections,
+      shared hubs, settings, photos) sat as local-only commits for a while and were
+      only just pushed to `origin/main` — confirm Amplify has picked up the push and
+      rebuilt before trusting the "Live" link below during a demo.
+- [ ] **Register 1–2 more real accounts.** The directory is down to a single real
+      account (the other three rows were leftover test data, deleted this session) —
+      the bubble map needs a crowd for "sized by overlap" to read at all. If the room
+      is still sparse at demo time, set `NEXT_PUBLIC_DEMO_PERSONAS=true` and rebuild.
 - [ ] **Walk the full flow on the deployed site**: signup → email code → onboarding →
       bubble map → nudge → voice intro → celebration → DM → hub.
 - [ ] **Pre-grant microphone permission** in the demo browser so no OS prompt appears
@@ -146,6 +183,11 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
       server-side job.
 
 ### P3 — Hardening
+- [ ] **`scripts/provision.mjs` still doesn't create `yellow-hubs`/`yellow-hub-items`.**
+      They were set up by hand against the live AWS account; a fresh environment needs
+      those two tables created manually. (The `photos/*` public-read bucket policy is
+      now handled by the script — see `PRIMER.md` AWS gotcha #7 — this item is just
+      the two hub tables.)
 - [ ] **Verify JWTs against the pool's JWKS** in `proxy.ts`. It currently checks
       presence and expiry only, relying on the httpOnly cookie.
 - [ ] Rotate the AWS access key and Cognito client secret (both passed through a
