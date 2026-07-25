@@ -221,3 +221,110 @@ export function isPairMessage(value: unknown): value is PairMessage {
     typeof m.at === 'number'
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* io — every path returns, none throw                                        */
+/* -------------------------------------------------------------------------- */
+
+const IO_TIMEOUT_MS = 4_000;
+
+async function call<T>(
+  input: string,
+  init: RequestInit | undefined,
+  fallback: T,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), IO_TIMEOUT_MS);
+  try {
+    const res = await fetch(input, {
+      ...init,
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    if (!res.ok) return fallback;
+    return (await res.json()) as T;
+  } catch {
+    return fallback;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function query(userId?: string | null): string {
+  const id = (userId ?? '').trim();
+  return id ? `userId=${encodeURIComponent(id)}` : '';
+}
+
+/**
+ * Every pair this person is in.
+ *
+ * `ok` is not decoration. The store reconciles local connection state against
+ * this list, and an unreachable table also answers with an empty array — so
+ * without `ok` a transient failure would read as "you have no connections" and
+ * delete every real one.
+ */
+export async function fetchPairs(
+  userId?: string,
+): Promise<{ ok: boolean; pairs: PairSummary[] }> {
+  const q = query(userId);
+  const body = await call<{ ok?: unknown; pairs?: unknown }>(
+    `/api/pairs${q ? `?${q}` : ''}`,
+    undefined,
+    {},
+  );
+  if (body.ok !== true || !Array.isArray(body.pairs)) return { ok: false, pairs: [] };
+  return { ok: true, pairs: body.pairs as PairSummary[] };
+}
+
+/** One pair, or `null` for "no row", "not a member", and "unreachable" alike. */
+export async function fetchPair(them: string, userId?: string): Promise<PairView | null> {
+  const id = (them ?? '').trim();
+  if (!id) return null;
+  const q = query(userId);
+  const body = await call<{ pair?: unknown }>(
+    `/api/pair?with=${encodeURIComponent(id)}${q ? `&${q}` : ''}`,
+    undefined,
+    {},
+  );
+  const pair = body.pair;
+  return pair && typeof pair === 'object' ? (pair as PairView) : null;
+}
+
+function post<T>(url: string, payload: unknown, fallback: T): Promise<T> {
+  return call<T>(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    fallback,
+  );
+}
+
+/**
+ * Marks my side of the intro as sent. The response — not the caller's
+ * optimism — decides whether the pair is connected.
+ */
+export async function sendPairIntro(
+  them: string,
+  userId?: string,
+): Promise<{ ok: boolean; pair: PairView | null; connected: boolean }> {
+  return post(
+    '/api/pair/intro',
+    { with: them, userId },
+    { ok: false, pair: null, connected: false },
+  );
+}
+
+export async function sendPairMessage(
+  them: string,
+  message: Omit<PairMessage, 'senderId' | 'at'>,
+  userId?: string,
+): Promise<{ ok: boolean; pair: PairView | null; reason?: string }> {
+  return post(
+    '/api/pair/message',
+    { with: them, message, userId },
+    { ok: false, pair: null, reason: 'unavailable' },
+  );
+}
