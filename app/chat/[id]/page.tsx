@@ -768,13 +768,9 @@ export default function ChatPage({
             type="button"
             className="y-ch-icon"
             aria-label="Go back"
-            onClick={() => {
-              if (typeof window !== 'undefined' && window.history.length > 1) {
-                router.back();
-              } else {
-                router.push('/home');
-              }
-            }}
+            // Always the conversation list, never history: arriving here from the
+            // connect flow would otherwise send you back to the celebration screen.
+            onClick={() => router.push('/chats')}
           >
             <svg width="9" height="15" viewBox="0 0 9 15" aria-hidden>
               <path
@@ -886,13 +882,9 @@ export default function ChatPage({
           type="button"
           className="y-ch-icon"
           aria-label="Go back"
-          onClick={() => {
-            if (typeof window !== 'undefined' && window.history.length > 1) {
-              router.back();
-            } else {
-              router.push('/home');
-            }
-          }}
+          // Always the conversation list, never history: arriving here from the
+          // connect flow would otherwise send you back to the celebration screen.
+          onClick={() => router.push('/chats')}
         >
           <svg width="9" height="15" viewBox="0 0 9 15" aria-hidden>
             <path

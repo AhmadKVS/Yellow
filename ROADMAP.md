@@ -131,6 +131,24 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
   everyone's orbit with junk matches. The one real account in the directory was
   left untouched.
 
+### Hours 13–14 · Fixed a stuck connection (identity race)
+- **Root cause: onboarding could publish a profile under the wrong id.**
+  `setProfile` picked whatever identity was cached at that instant
+  (`currentUserId()`), racing the async Cognito `sub` lookup. Anyone who hit
+  "Enter" before `/api/auth/me` answered got published to the shared directory
+  under a throwaway browser UUID *forever*, while their own server-side calls kept
+  resolving their real `sub`. Two ids for one person meant every pair with them
+  silently split across two half-filled `pair#` rows that never both completed —
+  both sides stuck on "Waiting on X" with no way to recover through the UI.
+- **Fixed in `lib/store.tsx`**: `setProfile` now awaits `resolveIdentity()` before
+  computing the id it publishes and dispatches.
+- **Repaired the one live account already affected**, confirmed by reading
+  DynamoDB directly rather than guessing: moved the profile onto the correct
+  `sub`-keyed `yellow-users` row, deleted the stray duplicate directory row, and
+  merged the two half-filled `pair#` rows into one connected row — both intro
+  timestamps, `connectedAt` stamped, and the six voice-intro messages seeded in
+  the same shape `markIntroSent`/`seedMessages` would have produced.
+
 ---
 
 ## Next up 🎯
@@ -163,6 +181,10 @@ See `PRIMER.md` for architecture and `DEPLOY.md` for deployment mechanics.
       `/api/people` while signed out and the wall correctly 401s them. Harmless, but
       visible with devtools open. Skip those fetches on public routes.
 - [ ] **Orphaned `me` row** in `yellow-app` from the pre-auth era. Safe to delete.
+- [ ] **One unrelated stray `pair#...#u_7220d6fe...` row** (introA only, no
+      matching `yellow-users` row — an id from earlier testing) is still sitting in
+      `yellow-app`, left untouched during the identity-race repair since it isn't
+      part of any current account. Harmless orphan; safe to delete.
 - [ ] **`/api/pairs` is a `Scan`** with `begins_with(userId, 'pair#')`, filtered in the
       handler to rows containing my id. Fine at demo scale and it matches how
       `/api/people` reads the directory, but it reads every pair row on every 8s poll

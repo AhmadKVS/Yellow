@@ -113,6 +113,8 @@ interface Face {
   emoji: string;
   gradient: readonly [string, string];
   name: string;
+  /** Real photo when they've uploaded one; the emoji is the fallback. */
+  photoUrl?: string;
 }
 
 export interface CelebrationProps {
@@ -169,7 +171,26 @@ export default function Celebration({
     emoji: me?.emoji ?? '🟡',
     gradient: me?.gradient ?? ['#FFE45C', '#FFC300'],
     name: me?.name ?? 'You',
+    photoUrl: me?.photoUrl,
   };
+
+  const faceStyle = (f: Face) => ({
+    backgroundImage: `radial-gradient(circle at 34% 26%, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 48%), linear-gradient(150deg, ${f.gradient[0]}, ${f.gradient[1]})`,
+  });
+
+  const faceContent = (f: Face) =>
+    f.photoUrl ? (
+      // eslint-disable-next-line @next/next/no-img-element -- a plain public S3
+      // object; next/image would need a remotePatterns entry per bucket.
+      <img
+        src={f.photoUrl}
+        alt=""
+        className="h-full w-full rounded-full object-cover"
+        draggable={false}
+      />
+    ) : (
+      f.emoji
+    );
 
   return (
     <div
@@ -185,23 +206,11 @@ export default function Celebration({
         <div className="y-cel-stage">
           <div className="y-cel-ring" aria-hidden />
 
-          <div
-            className="y-cel-face y-cel-face-a"
-            aria-hidden
-            style={{
-              backgroundImage: `radial-gradient(circle at 34% 26%, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 48%), linear-gradient(150deg, ${myFace.gradient[0]}, ${myFace.gradient[1]})`,
-            }}
-          >
-            {myFace.emoji}
+          <div className="y-cel-face y-cel-face-a" aria-hidden style={faceStyle(myFace)}>
+            {faceContent(myFace)}
           </div>
-          <div
-            className="y-cel-face y-cel-face-b"
-            aria-hidden
-            style={{
-              backgroundImage: `radial-gradient(circle at 34% 26%, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 48%), linear-gradient(150deg, ${person.gradient[0]}, ${person.gradient[1]})`,
-            }}
-          >
-            {person.emoji}
+          <div className="y-cel-face y-cel-face-b" aria-hidden style={faceStyle(person)}>
+            {faceContent(person)}
           </div>
 
           <div className="y-cel-burst" aria-hidden>

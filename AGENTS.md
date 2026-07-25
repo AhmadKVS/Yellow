@@ -33,6 +33,14 @@ Amplify.
   last-write-wins. Breaking any of these hangs the app or destroys cloud state.
 - **State is keyed by the Cognito `sub`**, resolved before the first read. Never key
   on a literal like `"me"` — that made every account share one row.
+- **Anything published as *your* id (`setProfile` → `publishProfile`) must `await
+  resolveIdentity()` first**, never a synchronous `currentUserId()`/
+  `resolveDirectoryId()` fallback. That fallback races the async Cognito lookup: hit
+  "Enter" on onboarding before `/api/auth/me` answers and you publish under a
+  throwaway browser UUID forever, while your own server routes keep resolving your
+  real `sub`. Two ids for one person means every pair with them silently splits into
+  two half-filled `pair#` rows that never both complete — permanent "waiting on
+  them" on both sides. Cost a real, already-live connection; see `ROADMAP.md`.
 - **Directory `people` and shared `hubs` never enter the persisted blob** (not
   localStorage, not the state row). `LocalAppState = Omit<AppState, 'hubs'>` enforces
   this for hubs at the type level — don't widen `LocalAppState` back to `AppState`.
@@ -65,3 +73,15 @@ Amplify.
 `npx tsc --noEmit` → clean · `npm run build` → passes · exercise the real route
 (curl or browser), don't assume. There are 9 known pre-existing `react-hooks/refs`
 lint errors in `BubbleField`/`MatchNudge`/`ProfileCard` — don't count those as yours.
+`node scripts/check-pair.mjs` is the red/green check for `lib/pair.ts` — run it after
+touching pair-key or pair-view logic.
+
+Debugging a "connection won't unlock" style report: don't trust the UI state alone —
+query DynamoDB directly (`aws dynamodb get-item`/`scan` against `$YELLOW_TABLE` /
+`$YELLOW_USERS_TABLE`, values in `.env.local`) to see whether the two sides actually
+share one `pair#` row before proposing a fix. On Windows/Git Bash, `aws dynamodb`
+crashes on any non-ASCII in the response (e.g. a stored emoji) — export
+`PYTHONUTF8=1 PYTHONIOENCODING=utf-8` first. The same applies in reverse to
+`--expression-attribute-values file://...`: write that JSON as pure ASCII
+(`json.dump(..., ensure_ascii=True)` in Python) or the CLI fails with "Unable to load
+paramfile ... text contents could not be decoded".

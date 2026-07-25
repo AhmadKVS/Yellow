@@ -230,6 +230,21 @@ Each of these cost real time. They are not hypothetical.
    `scripts/provision.mjs` now runs this step (`ensurePublicPhotos`) so a fresh
    bucket in a new environment gets it automatically; it was applied by hand once
    against the existing bucket before the script was updated.
+8. **A published directory id that doesn't match the account's Cognito `sub` splits
+   every pair that account is in.** `setProfile` used to grab whatever identity was
+   cached synchronously, which could race the async `/api/auth/me` lookup and
+   publish under a throwaway browser UUID instead — permanently, since nothing
+   revisits `profile.id` later. Two ids for one person means `pairKey` computes two
+   different rows depending on who's reaching them, so both sides' intros land on
+   separate half-filled rows and neither ever sees `connectedAt`. Confirmed live via
+   direct `aws dynamodb` reads, fixed in `lib/store.tsx` (`setProfile` now awaits
+   `resolveIdentity()`), and repaired by hand for the one account already affected —
+   see `ROADMAP.md`.
+9. **`aws dynamodb` from Git Bash on Windows crashes on non-ASCII output** (e.g. a
+   stored emoji) with a `'charmap' codec` error, and rejects non-ASCII
+   `--expression-attribute-values file://...` JSON with a paramfile decode error.
+   Export `PYTHONUTF8=1 PYTHONIOENCODING=utf-8` before reading, and write any
+   paramfile JSON with `ensure_ascii=True` before writing.
 
 ---
 
