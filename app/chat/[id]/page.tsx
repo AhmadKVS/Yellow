@@ -122,6 +122,28 @@ function ChatStyles() {
 .y-ch-icon-lead{ margin-left:-12px }
 .y-ch-icon-tail{ margin-right:-12px }
 
+/* Inert on purpose — no route, no handler. A preview of what's coming, not
+   a control. */
+.y-ch-nda{
+  display:inline-flex; align-items:center; gap:6px; flex-shrink:0;
+  height:30px; padding:0 10px 0 9px; border-radius:9999px; border:0;
+  background:rgba(255,255,255,.045);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
+  color:rgba(255,248,231,.4); cursor:default;
+  font-family:inherit; font-size:12px; font-weight:500; letter-spacing:-.006em;
+}
+.y-ch-nda-soon{
+  font-size:9.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+  color:rgba(255,214,10,.7); background:rgba(255,214,10,.12);
+  border-radius:9999px; padding:2.5px 6px;
+}
+/* Icon-only below ~420px, so the pill can't crowd the name off a phone
+   header — the same information lives in the aria-label either way. */
+@media (max-width:420px){
+  .y-ch-nda{ width:30px; padding:0; justify-content:center }
+  .y-ch-nda-label,.y-ch-nda-soon{ display:none }
+}
+
 /* Chrome glass. The bars bleed to the frame's gutters, so the hairline is
    the only edge the eye gets. */
 .y-ch-bar{
@@ -1010,6 +1032,33 @@ export default function ChatPage({
             <Eyebrow tone="gold">Connected</Eyebrow>
           </span>
         </div>
+
+        <button
+          type="button"
+          className="y-ch-nda"
+          disabled
+          aria-label="NDA Signer — coming soon"
+        >
+          <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden>
+            <path
+              d="M3 1.5h5l2 2v8a.5.5 0 0 1-.5.5h-6a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5Z"
+              stroke="currentColor"
+              strokeWidth="1.2"
+              fill="none"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M4.3 9.2 8 6.6M8 6.6l-.3 1.3 1.3-.4L8 6.6Z"
+              stroke="currentColor"
+              strokeWidth="1.1"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span className="y-ch-nda-label">NDA Signer</span>
+          <span className="y-ch-nda-soon">Coming soon</span>
+        </button>
 
         <Link
           href={`/connect/${persona.id}`}

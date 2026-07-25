@@ -65,6 +65,14 @@ const SettingsGlyph = (
   </>
 );
 
+/** A document with a signing flourish — the NDA-Signer preview, not a real tab. */
+const NdaGlyph = (
+  <>
+    <path d="M7.6 3.4h6.2l3.6 3.6v12a1 1 0 0 1-1 1h-8.8a1 1 0 0 1-1-1v-14.6a1 1 0 0 1 1-1Z" />
+    <path d="M9.4 15.4 15 9.8M15 9.8l-.5 2.4 2.4-.7L15 9.8Z" />
+  </>
+);
+
 const TABS: TabDef[] = [
   {
     label: 'Bubbles',
@@ -120,6 +128,18 @@ function TabBarStyles() {
     0 6px 18px -12px rgba(0,0,0,.9);
 }
 .y-row-count{ margin-left:auto }
+
+/* Inert preview row — same geometry as a real tab, none of the affordance:
+   no hover fill, no active state, cursor stays the pointer's own arrow. */
+.y-row-inert{
+  color:rgba(255,248,231,.32); cursor:default; user-select:none;
+}
+.y-row-soon{
+  margin-left:auto; font-size:9.5px; font-weight:600; letter-spacing:.06em;
+  text-transform:uppercase; color:rgba(255,214,10,.65);
+  background:rgba(255,214,10,.1); border-radius:9999px; padding:2.5px 7px;
+  flex-shrink:0;
+}
 
 /* --- bottom bar: chrome glass, hairline on the leading edge --- */
 .y-nav-bottom{
@@ -199,6 +219,13 @@ export function TabBar({ orientation = 'bottom' }: { orientation?: 'bottom' | 's
             </Link>
           );
         })}
+
+        {/* Preview only — no route, no page behind it yet. */}
+        <div className="y-row y-row-inert" aria-label="NDA Signer — coming soon">
+          <Glyph size={22}>{NdaGlyph}</Glyph>
+          <span>NDA Signer</span>
+          <span className="y-row-soon">Soon</span>
+        </div>
       </nav>
     );
   }
