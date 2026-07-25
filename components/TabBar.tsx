@@ -130,15 +130,20 @@ function TabBarStyles() {
 .y-row-count{ margin-left:auto }
 
 /* Inert preview row — same geometry as a real tab, none of the affordance:
-   no hover fill, no active state, cursor stays the pointer's own arrow. */
+   no hover fill, no active state, cursor stays the pointer's own arrow.
+   Two lines so "Coming soon" is its own legible row, not a squeezed badge. */
 .y-row-inert{
-  color:rgba(255,248,231,.32); cursor:default; user-select:none;
+  min-height:52px; padding:9px 10px; align-items:center;
+  cursor:default; user-select:none;
 }
-.y-row-soon{
-  margin-left:auto; font-size:9.5px; font-weight:600; letter-spacing:.06em;
-  text-transform:uppercase; color:rgba(255,214,10,.65);
-  background:rgba(255,214,10,.1); border-radius:9999px; padding:2.5px 7px;
-  flex-shrink:0;
+.y-row-inert-text{ display:flex; flex-direction:column; gap:2px; min-width:0 }
+.y-row-inert-label{
+  font-size:14.5px; font-weight:450; letter-spacing:-.012em;
+  color:rgba(255,248,231,.55);
+}
+.y-row-inert-soon{
+  font-size:12px; font-weight:600; letter-spacing:.01em;
+  color:rgba(255,214,10,.85);
 }
 
 /* --- bottom bar: chrome glass, hairline on the leading edge --- */
@@ -223,8 +228,10 @@ export function TabBar({ orientation = 'bottom' }: { orientation?: 'bottom' | 's
         {/* Preview only — no route, no page behind it yet. */}
         <div className="y-row y-row-inert" aria-label="NDA Signer — coming soon">
           <Glyph size={22}>{NdaGlyph}</Glyph>
-          <span>NDA Signer</span>
-          <span className="y-row-soon">Soon</span>
+          <span className="y-row-inert-text">
+            <span className="y-row-inert-label">NDA Signer</span>
+            <span className="y-row-inert-soon">Coming soon</span>
+          </span>
         </div>
       </nav>
     );
