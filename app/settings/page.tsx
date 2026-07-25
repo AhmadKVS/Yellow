@@ -251,10 +251,11 @@ function SettingsStyles() {
   background:linear-gradient(180deg,rgba(255,248,231,.05),rgba(255,248,231,.014));
 }
 .ys-face{
-  flex:none;width:58px;height:58px;border-radius:999px;
+  flex:none;width:58px;height:58px;border-radius:999px;overflow:hidden;
   display:flex;align-items:center;justify-content:center;font-size:27px;
   box-shadow:0 12px 28px -14px rgba(0,0,0,.95),inset 0 1px 0 rgba(255,255,255,.45);
 }
+.ys-face-photo{width:100%;height:100%;object-fit:cover}
 .ys-face span{display:block;animation:ys-pop 380ms cubic-bezier(.22,1,.36,1) backwards}
 .ys-card-name{
   margin:0;font-size:18px;font-weight:640;letter-spacing:-.026em;line-height:1.16;
@@ -1034,10 +1035,16 @@ export default function SettingsPage() {
           aria-hidden="true"
           style={{
             fontFamily: EMOJI_FACE,
-            backgroundImage: `radial-gradient(circle at 34% 26%, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 48%), linear-gradient(150deg, ${stored.gradient[0]}, ${stored.gradient[1]})`,
+            backgroundImage: view.photoUrl
+              ? undefined
+              : `radial-gradient(circle at 34% 26%, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 48%), linear-gradient(150deg, ${stored.gradient[0]}, ${stored.gradient[1]})`,
           }}
         >
-          <span key={view.emoji}>{view.emoji}</span>
+          {view.photoUrl ? (
+            <img src={view.photoUrl} alt="" className="ys-face-photo" />
+          ) : (
+            <span key={view.emoji}>{view.emoji}</span>
+          )}
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
           <p className="ys-card-name" data-empty={trimmedName.length === 0}>
@@ -1146,6 +1153,16 @@ export default function SettingsPage() {
                 ) : null}
               </div>
             </div>
+            <p
+              style={{
+                margin: '9px 0 0',
+                fontSize: 11.5,
+                lineHeight: 1.4,
+                color: 'rgba(255,248,231,.4)',
+              }}
+            >
+              Tap the camera to add your own photo instead of an emoji.
+            </p>
             <input
               ref={photoInputRef}
               type="file"
@@ -1181,6 +1198,29 @@ export default function SettingsPage() {
               maxLength={MAX_TAGLINE}
               placeholder="The one line under your bubble"
               onChange={(event) => setDraft({ ...view, tagline: event.target.value })}
+            />
+          </div>
+
+          <div className="ys-field">
+            <div className="ys-fieldhead">
+              <label
+                className="ys-fieldname"
+                htmlFor="ys-bio"
+                style={{ fontFamily: MONO }}
+              >
+                Full description
+              </label>
+              <span className="ys-count" style={{ fontFamily: MONO }}>
+                {view.bio.length}/{MAX_BIO}
+              </span>
+            </div>
+            <textarea
+              id="ys-bio"
+              className="ys-textarea"
+              value={view.bio}
+              maxLength={MAX_BIO}
+              placeholder="Who you are and what you're building — this is what you wrote at onboarding, and the only place to read it back."
+              onChange={(event) => setDraft({ ...view, bio: event.target.value })}
             />
           </div>
         </section>

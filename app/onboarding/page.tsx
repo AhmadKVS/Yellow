@@ -892,6 +892,16 @@ export default function OnboardingPage() {
                   ) : null}
                 </div>
               </div>
+              <p
+                style={{
+                  margin: '9px 0 0',
+                  fontSize: 11.5,
+                  lineHeight: 1.4,
+                  color: 'rgba(255,248,231,.4)',
+                }}
+              >
+                Tap the camera to add your own photo instead of an emoji.
+              </p>
               <input
                 ref={photoInputRef}
                 type="file"

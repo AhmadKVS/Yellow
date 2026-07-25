@@ -354,6 +354,22 @@ export default function ProfileCard({
           </button>
         </div>
 
+        {person.bio?.trim() ? (
+          <p
+            style={{
+              fontFamily: SANS,
+              fontSize: 14,
+              lineHeight: 1.6,
+              letterSpacing: '-0.006em',
+              color: 'rgba(255,248,231,.68)',
+              margin: '18px 0 0',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {person.bio.trim()}
+          </p>
+        ) : null}
+
         {/* The pitch line. The number is a bubble — same object language as
             the field it came from. */}
         <p
