@@ -1,8 +1,74 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { usePathname } from 'next/navigation';
+import { useEffect, useState, type ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { TabBar } from './TabBar';
+
+interface SessionUser {
+  name?: string;
+  email?: string;
+}
+
+/** Signed-in identity + the only way out of the app. */
+function AccountFooter() {
+  const router = useRouter();
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setUser((d?.user as SessionUser) ?? null);
+      })
+      .catch(() => {
+        /* Auth off or unreachable — footer just stays quiet. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function signOut() {
+    setBusy(true);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      /* Clearing the cookie is best-effort; still send them to the door. */
+    }
+    router.replace('/login');
+    router.refresh();
+  }
+
+  return (
+    <div className="mt-auto px-3">
+      <div className="mb-2.5 flex items-center gap-2 text-[11px] text-[#FFF8E7]/30">
+        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[#FFD60A]/60" />
+        Synced to AWS
+      </div>
+
+      {user && (
+        <div className="border-t border-white/[0.06] pt-3">
+          <p className="truncate text-[12px] font-medium text-[#FFF8E7]/70">
+            {user.name || user.email}
+          </p>
+          {user.name && user.email && (
+            <p className="mt-0.5 truncate text-[10.5px] text-[#FFF8E7]/28">{user.email}</p>
+          )}
+          <button
+            type="button"
+            onClick={signOut}
+            disabled={busy}
+            className="mt-2 text-[11px] text-[#FFF8E7]/40 underline-offset-2 transition-colors duration-200 hover:text-[#FFD60A]/80 hover:underline disabled:opacity-50"
+          >
+            {busy ? 'Signing out…' : 'Sign out'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Routes whose content owns the whole canvas instead of sitting in a reading column. */
 function isFullBleed(pathname: string) {
@@ -66,15 +132,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
               <TabBar orientation="sidebar" />
             </div>
 
-            <div className="mt-auto px-3">
-              <div className="flex items-center gap-2 text-[11px] text-[#FFF8E7]/30">
-                <span
-                  aria-hidden="true"
-                  className="h-1.5 w-1.5 rounded-full bg-[#FFD60A]/60"
-                />
-                Synced to AWS
-              </div>
-            </div>
+            <AccountFooter />
           </aside>
         )}
 
